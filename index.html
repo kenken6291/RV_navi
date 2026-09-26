@@ -12,7 +12,7 @@
   <script>
     tailwind.config = { darkMode: 'class', corePlugins: { preflight: false } };
   </script>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=1.1.2">
 </head>
 <body>
 
@@ -24,6 +24,9 @@
   <div id="toast" class="toast" role="alert" hidden></div>
 
   <div class="fabs">
+    <button id="btn-account" class="fab" type="button" aria-label="ログイン・会員登録">
+      <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><circle cx="12" cy="8" r="4.2" fill="currentColor"/><path d="M3.5 21c.8-4.4 4.2-7 8.5-7s7.7 2.6 8.5 7z" fill="currentColor"/></svg>
+    </button>
     <button id="btn-locate" class="fab" type="button" aria-label="現在地を表示">
       <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor"/><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
@@ -44,6 +47,12 @@
         <button id="btn-vehicle" class="veh-signs" type="button" aria-label="車両の寸法を設定"></button>
       </div>
     </header>
+
+    <div class="acct-bar" id="acct-bar">
+      <button id="acct-bar-name" class="acct-bar-name" type="button">ログインしていません</button>
+      <button id="acct-bar-login" class="btn-sm primary" type="button">ログイン／会員登録</button>
+      <button id="acct-bar-logout" class="btn-sm" type="button" hidden>ログアウト</button>
+    </div>
 
     <nav class="tabs" role="tablist" aria-label="機能の切り替え">
       <button class="tab is-active" type="button" role="tab" data-tab="route" aria-selected="true">ルート</button>
@@ -186,18 +195,6 @@
 
       <p id="veh-err" class="err" role="alert" hidden></p>
 
-      <details class="transfer">
-        <summary>別の端末へデータを引き継ぐ</summary>
-        <p class="hint">この端末の引き継ぎコードです。他の端末で入力すると、車両設定とお気に入りを読み込めます。コードは他人に教えないでください。</p>
-        <div class="pt-row">
-          <input id="my-code" class="in code" readonly aria-label="この端末の引き継ぎコード">
-          <button id="btn-copy-code" class="btn-sq" type="button">コピー</button>
-        </div>
-        <div class="pt-row">
-          <input id="in-code" class="in code" placeholder="引き継ぎコードを入力" autocomplete="off" aria-label="引き継ぎコード">
-          <button id="btn-restore" class="btn-sq" type="button">読み込む</button>
-        </div>
-      </details>
 
       <div class="dlg-actions">
         <button id="veh-cancel" class="btn-ghost" type="button">閉じる</button>
@@ -206,7 +203,126 @@
     </form>
   </dialog>
 
+  <!-- 会員認証 -->
+  <dialog id="dlg-auth" class="dlg" aria-labelledby="auth-title">
+    <div class="dlg-body">
+      <h2 id="auth-title" class="dlg-title">ログイン</h2>
+      <p id="auth-lead" class="dlg-lead"></p>
+
+      <!-- ログイン -->
+      <form id="form-login" class="auth-form" data-mode="login" novalidate>
+        <div class="fld">
+          <label for="login-email">メールアドレス</label>
+          <input id="login-email" name="email" class="in" type="email" inputmode="email" autocomplete="username" autocapitalize="off">
+        </div>
+        <div class="fld">
+          <label for="login-password">パスワード</label>
+          <div class="pw-wrap">
+            <input id="login-password" name="password" class="in" type="password" autocomplete="current-password">
+            <button class="pw-toggle" type="button" data-target="login-password" aria-pressed="false" aria-label="パスワードを表示">表示</button>
+          </div>
+        </div>
+        <button class="btn-primary" type="submit">ログイン</button>
+        <div class="auth-links">
+          <button class="link" type="button" data-goto="forgot">パスワードを忘れた方</button>
+          <button class="link" type="button" data-goto="register">はじめての方（無料の会員登録）</button>
+        </div>
+      </form>
+
+      <!-- 会員登録 -->
+      <form id="form-register" class="auth-form" data-mode="register" novalidate hidden>
+        <div class="fld">
+          <label for="reg-email">メールアドレス</label>
+          <input id="reg-email" name="email" class="in" type="email" inputmode="email" autocomplete="email" autocapitalize="off">
+        </div>
+        <div class="fld">
+          <label for="reg-nickname">ニックネーム（20文字まで）</label>
+          <input id="reg-nickname" name="nickname" class="in" maxlength="20" autocomplete="nickname" placeholder="例：旅するケン">
+        </div>
+        <div class="consent">
+          <p class="consent-title">利用上の注意</p>
+          <ul>
+            <li>ルートや警告は、公開地図データ（OpenStreetMap）とAIによる推定です。未登録の高さ・幅制限や工事規制があり得ます。</li>
+            <li>運転中の操作はしないでください。必ず現地の道路標識と交通規則を優先してください。</li>
+            <li>このアプリの情報により生じた損害について、運営者は責任を負いません。</li>
+            <li>登録したメールアドレスは、ログインと仮パスワードの送信にのみ使います。</li>
+          </ul>
+          <label class="check"><input type="checkbox" name="agree"><span>上記に同意します</span></label>
+        </div>
+        <button class="btn-primary" type="submit">仮パスワードを受け取る</button>
+        <div class="auth-links">
+          <button class="link" type="button" data-goto="login">登録済みの方はログイン</button>
+        </div>
+      </form>
+
+      <!-- パスワードを忘れた -->
+      <form id="form-forgot" class="auth-form" data-mode="forgot" novalidate hidden>
+        <div class="fld">
+          <label for="fg-email">登録したメールアドレス</label>
+          <input id="fg-email" name="email" class="in" type="email" inputmode="email" autocomplete="email" autocapitalize="off">
+        </div>
+        <p class="hint">新しい仮パスワードを送ると、今までのパスワードは使えなくなります。</p>
+        <button class="btn-primary" type="submit">仮パスワードを再発行</button>
+        <div class="auth-links">
+          <button class="link" type="button" data-goto="login">ログインに戻る</button>
+        </div>
+      </form>
+
+      <!-- パスワード変更 -->
+      <form id="form-change" class="auth-form" data-mode="change" novalidate hidden>
+        <div class="fld">
+          <label for="chg-current" id="chg-current-label">今のパスワード</label>
+          <div class="pw-wrap">
+            <input id="chg-current" class="in" type="password" autocomplete="current-password">
+            <button class="pw-toggle" type="button" data-target="chg-current" aria-pressed="false" aria-label="パスワードを表示">表示</button>
+          </div>
+        </div>
+        <div class="fld">
+          <label for="chg-new">新しいパスワード</label>
+          <div class="pw-wrap">
+            <input id="chg-new" class="in" type="password" autocomplete="new-password" aria-describedby="chg-rule">
+            <button class="pw-toggle" type="button" data-target="chg-new" aria-pressed="false" aria-label="パスワードを表示">表示</button>
+          </div>
+          <p id="chg-rule" class="hint">8文字以上で、英字と数字を両方含めてください。</p>
+        </div>
+        <div class="fld">
+          <label for="chg-confirm">新しいパスワード（確認のためもう一度）</label>
+          <div class="pw-wrap">
+            <input id="chg-confirm" class="in" type="password" autocomplete="new-password">
+            <button class="pw-toggle" type="button" data-target="chg-confirm" aria-pressed="false" aria-label="パスワードを表示">表示</button>
+          </div>
+        </div>
+        <button class="btn-primary" type="submit">パスワードを設定する</button>
+      </form>
+
+      <!-- アカウント -->
+      <form id="form-account" class="auth-form" data-mode="account" novalidate hidden>
+        <p class="acct-row"><span>メールアドレス</span><b id="acct-email"></b></p>
+        <div class="fld">
+          <label for="acct-nickname">ニックネーム</label>
+          <div class="pt-row">
+            <input id="acct-nickname" class="in" maxlength="20" autocomplete="nickname">
+            <button class="btn-sq" type="submit">変更</button>
+          </div>
+        </div>
+        <div class="acct-actions">
+          <button id="acct-change-pw" class="btn-ghost" type="button">パスワードを変更</button>
+          <button id="acct-logout" class="btn-ghost" type="button">ログアウト</button>
+        </div>
+      </form>
+
+      <p id="auth-msg" class="auth-msg" role="alert" hidden></p>
+
+      <div class="dlg-actions">
+        <button id="auth-close" class="btn-ghost" type="button">閉じる</button>
+        <button id="auth-forced-logout" class="btn-ghost" type="button" hidden>ログアウト</button>
+      </div>
+    </div>
+  </dialog>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-  <script src="app.js"></script>
+  <script src="config.js?v=1.1.2"></script>
+  <script src="auth.js?v=1.1.2"></script>
+  <script src="app.js?v=1.1.2"></script>
 </body>
 </html>
