@@ -1,5 +1,5 @@
 /* ============================================================
- *  RV_navi  フロントエンド  app.js v1.1.5
+ *  RV_navi  フロントエンド  app.js v1.2.0
  *  GitHub Pages + Leaflet + GAS(Code.gs)
  *  読み込み順：config.js → auth.js → app.js（API通信・会員機能は auth.js）
  *  座標：API とのやり取りは [経度, 緯度]、Leaflet は [緯度, 経度]
@@ -7,7 +7,7 @@
 'use strict';
 
 window.RV_FILES = window.RV_FILES || {};
-window.RV_FILES.app = '1.1.5';
+window.RV_FILES.app = '1.2.0';
 
 const CONFIG = {
   // GAS の URL は config.js に書きます
@@ -211,6 +211,7 @@ function initMap() {
 }
 
 function onMapClick(e) {
+  if (typeof nav !== 'undefined' && nav.active) return; // 案内中は地点設定をしない
   const lat = r5(e.latlng.lat), lng = r5(e.latlng.lng);
   const html = `<div class="pop">
     <p class="pop-title" data-label>${lat.toFixed(5)}, ${lng.toFixed(5)}</p>
@@ -612,13 +613,20 @@ function renderRouteCards() {
       <span class="rc-risk">${risk}</span>
     </button>`;
   }).join('');
+  box.innerHTML += `<div class="nav-start">
+      <button id="btn-nav-start" class="btn-go" type="button">ナビを開始</button>
+      <button id="btn-nav-sim" class="btn-ghost" type="button">テスト走行</button>
+    </div>
+    <p class="hint">「テスト走行」は、ルートに沿って自動で進む練習用の画面です。</p>`;
   box.querySelectorAll('.rc').forEach(b => { b.onclick = () => selectRoute(+b.dataset.i); });
+  $('btn-nav-start').onclick = () => startNav(false);
+  $('btn-nav-sim').onclick = () => startNav(true);
 }
 
 /* ============================================================
  *  危険度解析
  * ========================================================== */
-async function runAnalysis() {
+async function runAnalysis(opts = {}) {
   const r = curRoute();
   if (!r) return;
   const seq = state.seq, sel = state.sel;
@@ -628,7 +636,7 @@ async function runAnalysis() {
   renderAi();
   renderRouteCards();
   try {
-    const d = await api('analyzeRoute', { route: r, vehicle: state.vehicle });
+    const d = await api('analyzeRoute', { route: r, vehicle: state.vehicle, useAI: opts.useAI !== false });
     if (seq !== state.seq) return;
     state.analysisByRoute[sel] = d;
     if (sel === state.sel) {

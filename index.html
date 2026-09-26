@@ -9,7 +9,7 @@
 
   <script>
     /* 読み込みエラーを画面に表示（古いファイルが残っているときの確認用） */
-    window.RV_EXPECT = '1.1.5';
+    window.RV_EXPECT = '1.2.0';
     window.RV_FILES = {};
     function rvBanner(msg) {
       var b = document.getElementById('rv-error');
@@ -33,7 +33,7 @@
   <script>
     tailwind.config = { darkMode: 'class', corePlugins: { preflight: false } };
   </script>
-  <link rel="stylesheet" href="style.css?v=1.1.5">
+  <link rel="stylesheet" href="style.css?v=1.2.0">
 </head>
 <body>
 
@@ -181,6 +181,39 @@
 
     <p class="disclaimer">ルートと警告は公開地図データとAIによる推定です。未登録の制限や工事規制があり得るため、必ず現地の標識を優先してください。</p>
   </aside>
+
+  <!-- 走行中ナビ -->
+  <div id="nav-ui" class="nav-ui" hidden>
+    <section id="nav-top" class="nav-top" aria-live="polite">
+      <div class="nav-top-inner">
+        <div id="nav-arrow" class="nav-arrow" aria-hidden="true"></div>
+        <div class="nav-man">
+          <b id="nav-dist">--</b>
+          <span id="nav-instr">ルートを確認しています</span>
+        </div>
+      </div>
+      <p id="nav-then" class="nav-then" hidden></p>
+    </section>
+
+    <div id="nav-alert" class="nav-alert" role="alert" hidden></div>
+    <div id="nav-status" class="nav-status" role="status" hidden></div>
+    <button id="nav-recenter" class="nav-recenter" type="button" hidden>現在地に戻る</button>
+
+    <section class="nav-bottom">
+      <div class="nav-stats">
+        <div><b id="nav-eta">--:--</b><span>到着予定</span></div>
+        <div><b id="nav-remain-t">--</b><span>残り時間</span></div>
+        <div><b id="nav-remain-d">--</b><span>残り距離</span></div>
+        <div><b id="nav-speed">0</b><span>km/h</span></div>
+      </div>
+      <p id="nav-rest" class="nav-rest" hidden></p>
+      <div class="nav-actions">
+        <button id="nav-voice" class="nav-btn" type="button" aria-pressed="true">音声 オン</button>
+        <button id="nav-sim-speed" class="nav-btn" type="button" hidden>速さ ×1</button>
+        <button id="nav-end" class="nav-btn nav-end" type="button">案内を終了</button>
+      </div>
+    </section>
+  </div>
 
   <!-- 車両プロファイル -->
   <dialog id="dlg-vehicle" class="dlg" aria-labelledby="dlg-vehicle-title">
@@ -342,13 +375,14 @@
   </dialog>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-  <script src="config.js?v=1.1.5"></script>
-  <script src="auth.js?v=1.1.5"></script>
-  <script src="app.js?v=1.1.5"></script>
+  <script src="config.js?v=1.2.0"></script>
+  <script src="auth.js?v=1.2.0"></script>
+  <script src="app.js?v=1.2.0"></script>
+  <script src="nav.js?v=1.2.0"></script>
   <script>
     window.addEventListener('load', function () {
       var want = window.RV_EXPECT, bad = [];
-      ['auth', 'app'].forEach(function (k) {
+      ['auth', 'app', 'nav'].forEach(function (k) {
         if (window.RV_FILES[k] !== want) bad.push(k + '.js（' + (window.RV_FILES[k] || '古い版') + '）');
       });
       var css = getComputedStyle(document.documentElement).getPropertyValue('--rv-css').trim();
