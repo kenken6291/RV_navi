@@ -9,7 +9,7 @@
 
   <script>
     /* 読み込みエラーを画面に表示（古いファイルが残っているときの確認用） */
-    window.RV_EXPECT = '1.1.4';
+    window.RV_EXPECT = '1.1.5';
     window.RV_FILES = {};
     function rvBanner(msg) {
       var b = document.getElementById('rv-error');
@@ -33,7 +33,7 @@
   <script>
     tailwind.config = { darkMode: 'class', corePlugins: { preflight: false } };
   </script>
-  <link rel="stylesheet" href="style.css?v=1.1.4">
+  <link rel="stylesheet" href="style.css?v=1.1.5">
 </head>
 <body>
 
@@ -89,7 +89,7 @@
       <section id="panel-route" class="panel" role="tabpanel">
         <div class="pt-row">
           <span class="pt-dot pt-start" aria-hidden="true">出</span>
-          <input id="in-start" class="in" type="search" placeholder="出発地（住所・施設名）" enterkeyhint="search" autocomplete="off" aria-label="出発地">
+          <input id="in-start" class="in" type="search" placeholder="出発地（住所・施設名・緯度経度）" enterkeyhint="search" autocomplete="off" aria-label="出発地">
           <button class="btn-sq" type="button" data-geo="start">検索</button>
           <button id="btn-here" class="btn-sq" type="button">現在地</button>
         </div>
@@ -99,19 +99,19 @@
 
         <div class="pt-row">
           <span class="pt-dot pt-via" aria-hidden="true">＋</span>
-          <input id="in-via" class="in" type="search" placeholder="経由地を追加" enterkeyhint="search" autocomplete="off" aria-label="経由地">
+          <input id="in-via" class="in" type="search" placeholder="経由地（住所・施設名・緯度経度）" enterkeyhint="search" autocomplete="off" aria-label="経由地">
           <button class="btn-sq" type="button" data-geo="via">検索</button>
         </div>
         <div id="res-via" class="gc-list" hidden></div>
 
         <div class="pt-row">
           <span class="pt-dot pt-end" aria-hidden="true">着</span>
-          <input id="in-end" class="in" type="search" placeholder="目的地（住所・施設名）" enterkeyhint="search" autocomplete="off" aria-label="目的地">
+          <input id="in-end" class="in" type="search" placeholder="目的地（住所・施設名・緯度経度）" enterkeyhint="search" autocomplete="off" aria-label="目的地">
           <button class="btn-sq" type="button" data-geo="end">検索</button>
         </div>
         <div id="res-end" class="gc-list" hidden></div>
 
-        <p class="hint">地図をタップしても地点を設定できます。地点のピンは指で動かせます。</p>
+        <p class="hint">緯度経度は「35.5712, 139.3702」やGoogleマップのURLでも入力できます。地図をタップしても地点を設定でき、ピンは指で動かせます。</p>
 
         <div class="opts">
           <label class="toggle"><input type="checkbox" id="opt-tolls"><span>有料道路を使わない</span></label>
@@ -342,9 +342,9 @@
   </dialog>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-  <script src="config.js?v=1.1.4"></script>
-  <script src="auth.js?v=1.1.4"></script>
-  <script src="app.js?v=1.1.4"></script>
+  <script src="config.js?v=1.1.5"></script>
+  <script src="auth.js?v=1.1.5"></script>
+  <script src="app.js?v=1.1.5"></script>
   <script>
     window.addEventListener('load', function () {
       var want = window.RV_EXPECT, bad = [];

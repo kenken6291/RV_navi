@@ -1,5 +1,5 @@
 /* ============================================================
- *  RV_navi  フロントエンド  app.js v1.1.4
+ *  RV_navi  フロントエンド  app.js v1.1.5
  *  GitHub Pages + Leaflet + GAS(Code.gs)
  *  読み込み順：config.js → auth.js → app.js（API通信・会員機能は auth.js）
  *  座標：API とのやり取りは [経度, 緯度]、Leaflet は [緯度, 経度]
@@ -7,7 +7,7 @@
 'use strict';
 
 window.RV_FILES = window.RV_FILES || {};
-window.RV_FILES.app = '1.1.4';
+window.RV_FILES.app = '1.1.5';
 
 const CONFIG = {
   // GAS の URL は config.js に書きます
@@ -370,15 +370,84 @@ async function reverseClient(lat, lng) {
   }
 }
 
+/* ------------------------------------------------------------
+ *  緯度経度の読み取り
+ *   35.5712, 139.3702 ／ 35.5712 139.3702 ／ 139.3702,35.5712（日本付近なら自動で入れ替え）
+ *   北緯35.5712 東経139.3702 ／ N35.5712 E139.3702
+ *   35°34'16.3"N 139°22'12.7"E ／ 35度34分16.3秒 139度22分12.7秒
+ *   GoogleマップのURL（…/@35.5712,139.3702,17z… や ?q=35.5712,139.3702）
+ * ---------------------------------------------------------- */
+function parseLatLng(input) {
+  let q = String(input || '').normalize('NFKC').trim();
+  if (!q) return null;
+  q = q.replace(/[、，]/g, ',').replace(/[−–—]/g, '-');
+
+  const finish = (a, b, aIsLat) => {
+    let lat = a, lng = b;
+    if (aIsLat === false) { lat = b; lng = a; }
+    else if (aIsLat == null) {
+      const inJpLng = v => v >= 122 && v <= 154, inJpLat = v => v >= 20 && v <= 46;
+      if ((Math.abs(a) > 90 && Math.abs(b) <= 90) || (inJpLng(a) && inJpLat(b))) { lat = b; lng = a; }
+    }
+    if (!isFinite(lat) || !isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+    return { lat: r5(lat), lng: r5(lng) };
+  };
+
+  // GoogleマップのURL
+  let m = q.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/) || q.match(/[?&](?:q|query|ll|center)=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/);
+  if (m) return finish(+m[1], +m[2], true);
+
+  // 度分秒（° ' " または 度 分 秒）
+  const dmsRe = /(\d+(?:\.\d+)?)\s*[°度]\s*(?:(\d+(?:\.\d+)?)\s*['′’分])?\s*(?:(\d+(?:\.\d+)?)\s*(?:["″”]|''|秒))?\s*([NSEW北南東西])?/gi;
+  const hemiRe = /(北緯|南緯|東経|西経|[NSEW])\s*$/i;
+  const dms = [];
+  let mm;
+  while ((mm = dmsRe.exec(q)) && dms.length < 2) {
+    const before = q.slice(0, mm.index).match(hemiRe);
+    const h = (mm[4] || (before && before[1]) || '').toUpperCase();
+    let v = (+mm[1]) + (+mm[2] || 0) / 60 + (+mm[3] || 0) / 3600;
+    if (/^(S|W|南|西)/.test(h)) v = -v;
+    dms.push({ v, lat: /^(N|S|北|南)/.test(h) ? true : /^(E|W|東|西)/.test(h) ? false : null });
+  }
+  if (dms.length === 2) {
+    const aIsLat = dms[0].lat != null ? dms[0].lat : dms[1].lat != null ? !dms[1].lat : null;
+    return finish(dms[0].v, dms[1].v, aIsLat);
+  }
+
+  // 北緯35.5 東経139.3 ／ N35.5 E139.3
+  const pre = [...q.matchAll(/(北緯|南緯|東経|西経|[NSEW])\s*(-?\d+(?:\.\d+)?)/gi)];
+  if (pre.length === 2) {
+    const val = x => (/^(S|W|南|西)/i.test(x[1]) ? -1 : 1) * (+x[2]);
+    const isLat = x => /^(N|S|北|南)/i.test(x[1]);
+    return finish(val(pre[0]), val(pre[1]), isLat(pre[0]) && !isLat(pre[1]) ? true : (!isLat(pre[0]) && isLat(pre[1]) ? false : null));
+  }
+
+  // 数字2つだけ（小数点を含むもの）
+  m = q.match(/^\(?\s*(-?\d{1,3}\.\d+)\s*[,\s]\s*(-?\d{1,3}\.\d+)\s*\)?$/);
+  if (m) return finish(+m[1], +m[2], null);
+  return null;
+}
+
 async function doGeocode(which) {
   const input = $('in-' + which), box = $('res-' + which);
   const q = input.value.trim();
   if (!q) { toast('地名・住所・施設名を入力してください'); return; }
+
+  // 緯度経度が入力された場合は、その地点をそのまま設定
+  const ll = parseLatLng(q);
+  if (ll) {
+    box.hidden = true;
+    setPoint(which, { lat: ll.lat, lng: ll.lng, label: `緯度 ${ll.lat.toFixed(5)}, 経度 ${ll.lng.toFixed(5)}` }, { refine: true });
+    if (!curRoute()) map.setView([ll.lat, ll.lng], 15);
+    toast('緯度経度の地点を設定しました');
+    return;
+  }
+
   box.hidden = false;
   box.innerHTML = '<div class="gc-item muted">検索しています…</div>';
   const results = await geocodeClient(q);
   if (!results.length) {
-    box.innerHTML = '<div class="gc-item muted">見つかりません。市町村名を付けるか、地図をタップして指定してください</div>';
+    box.innerHTML = '<div class="gc-item muted">見つかりません。市町村名を付けるか、緯度経度（例：35.5712, 139.3702）で入力してください</div>';
     return;
   }
   box.innerHTML = results.map((r, i) =>

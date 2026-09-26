@@ -1,5 +1,5 @@
 /* ============================================================
- *  RV_navi  会員認証・API通信  auth.js v1.1.4
+ *  RV_navi  会員認証・API通信  auth.js v1.1.5
  *  - 会員登録（メールに仮パスワード送信）
  *  - ログイン／ログアウト（5回失敗で15分ロックはサーバー側）
  *  - 初回ログイン時のパスワード変更（必須）
@@ -10,7 +10,7 @@
 'use strict';
 
 window.RV_FILES = window.RV_FILES || {};
-window.RV_FILES.auth = '1.1.4';
+window.RV_FILES.auth = '1.1.5';
 
 const AUTH_LS = { token: 'rvnavi_token', member: 'rvnavi_member' };
 
