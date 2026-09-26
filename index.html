@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1d4f9c">
+  <meta name="description" content="キャンピングカー専用ナビ。高さ・幅・重量制限や狭い道を避けたルートと、道の駅・RVパーク・温泉をルート沿いから探せます。">
+  <title>RV_navi キャンピングカー専用ナビ</title>
+
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { darkMode: 'class', corePlugins: { preflight: false } };
+  </script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div id="map" role="application" aria-label="地図"></div>
+
+  <div id="status" class="status" role="status" aria-live="polite" hidden>
+    <span class="spin" aria-hidden="true"></span><span id="status-text"></span>
+  </div>
+  <div id="toast" class="toast" role="alert" hidden></div>
+
+  <div class="fabs">
+    <button id="btn-locate" class="fab" type="button" aria-label="現在地を表示">
+      <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor"/><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+    <button id="btn-dark" class="fab" type="button" aria-label="夜間モードの切り替え" aria-pressed="false">
+      <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" fill="currentColor"/></svg>
+    </button>
+  </div>
+
+  <aside id="sheet" class="sheet" data-state="peek" aria-label="操作パネル">
+    <button id="sheet-handle" class="sheet-handle" type="button" aria-label="パネルの大きさを切り替え"><span></span></button>
+
+    <header class="plate">
+      <div class="plate-inner">
+        <div>
+          <h1 class="plate-name">RV_navi</h1>
+          <span class="plate-sub">キャンピングカー専用ナビ</span>
+        </div>
+        <button id="btn-vehicle" class="veh-signs" type="button" aria-label="車両の寸法を設定"></button>
+      </div>
+    </header>
+
+    <nav class="tabs" role="tablist" aria-label="機能の切り替え">
+      <button class="tab is-active" type="button" role="tab" data-tab="route" aria-selected="true">ルート</button>
+      <button class="tab" type="button" role="tab" data-tab="hazard" aria-selected="false">危険箇所<span class="badge" hidden></span></button>
+      <button class="tab" type="button" role="tab" data-tab="poi" aria-selected="false">施設<span class="badge" hidden></span></button>
+      <button class="tab" type="button" role="tab" data-tab="rest" aria-selected="false">休憩</button>
+      <button class="tab" type="button" role="tab" data-tab="fav" aria-selected="false">お気に入り<span class="badge" hidden></span></button>
+    </nav>
+
+    <div class="panels">
+
+      <!-- ルート -->
+      <section id="panel-route" class="panel" role="tabpanel">
+        <div class="pt-row">
+          <span class="pt-dot pt-start" aria-hidden="true">出</span>
+          <input id="in-start" class="in" type="search" placeholder="出発地（住所・施設名）" enterkeyhint="search" autocomplete="off" aria-label="出発地">
+          <button class="btn-sq" type="button" data-geo="start">検索</button>
+          <button id="btn-here" class="btn-sq" type="button">現在地</button>
+        </div>
+        <div id="res-start" class="gc-list" hidden></div>
+
+        <ol id="via-list" class="via-list" aria-label="経由地"></ol>
+
+        <div class="pt-row">
+          <span class="pt-dot pt-via" aria-hidden="true">＋</span>
+          <input id="in-via" class="in" type="search" placeholder="経由地を追加" enterkeyhint="search" autocomplete="off" aria-label="経由地">
+          <button class="btn-sq" type="button" data-geo="via">検索</button>
+        </div>
+        <div id="res-via" class="gc-list" hidden></div>
+
+        <div class="pt-row">
+          <span class="pt-dot pt-end" aria-hidden="true">着</span>
+          <input id="in-end" class="in" type="search" placeholder="目的地（住所・施設名）" enterkeyhint="search" autocomplete="off" aria-label="目的地">
+          <button class="btn-sq" type="button" data-geo="end">検索</button>
+        </div>
+        <div id="res-end" class="gc-list" hidden></div>
+
+        <p class="hint">地図をタップしても地点を設定できます。地点のピンは指で動かせます。</p>
+
+        <div class="opts">
+          <label class="toggle"><input type="checkbox" id="opt-tolls"><span>有料道路を使わない</span></label>
+          <label class="toggle"><input type="checkbox" id="opt-highways"><span>高速道路を使わない</span></label>
+          <label class="fld-inline">
+            <span>探し方</span>
+            <select id="opt-pref" class="sel">
+              <option value="recommended">おすすめ</option>
+              <option value="fastest">時間優先</option>
+              <option value="shortest">距離優先</option>
+            </select>
+          </label>
+        </div>
+
+        <button id="btn-route" class="btn-primary" type="button">ルートを探す</button>
+
+        <div id="route-cards" class="route-cards"></div>
+        <div id="ai-box"></div>
+      </section>
+
+      <!-- 危険箇所 -->
+      <section id="panel-hazard" class="panel" role="tabpanel" hidden>
+        <div id="hz-counts" class="hz-counts"></div>
+        <label class="toggle"><input type="checkbox" id="opt-lowhaz"><span>軽微な注意も表示する</span></label>
+        <div id="hz-list" class="list"></div>
+      </section>
+
+      <!-- 施設 -->
+      <section id="panel-poi" class="panel" role="tabpanel" hidden>
+        <p class="lbl">探す施設</p>
+        <div id="poi-cats" class="chips"></div>
+        <p class="lbl">ルートからの距離</p>
+        <div id="poi-radius" class="seg" role="radiogroup" aria-label="ルートからの距離">
+          <button type="button" data-r="500">500m以内</button>
+          <button type="button" data-r="1000">1km以内</button>
+          <button type="button" data-r="2000">2km以内</button>
+        </div>
+        <button id="btn-poi" class="btn-primary" type="button">ルート沿いを探す</button>
+        <div id="poi-list" class="timeline"></div>
+      </section>
+
+      <!-- 休憩 -->
+      <section id="panel-rest" class="panel" role="tabpanel" hidden>
+        <div class="grid grid-cols-2 gap-3">
+          <label class="fld">
+            <span>休憩の間隔</span>
+            <select id="rest-interval" class="sel">
+              <option value="90">1時間30分ごと</option>
+              <option value="120" selected>2時間ごと</option>
+              <option value="150">2時間30分ごと</option>
+            </select>
+          </label>
+          <label class="fld">
+            <span>出発時刻</span>
+            <input id="rest-depart" class="in" type="datetime-local">
+          </label>
+        </div>
+        <button id="btn-rest" class="btn-primary" type="button">休憩場所を提案</button>
+        <div id="rest-list"></div>
+      </section>
+
+      <!-- お気に入り -->
+      <section id="panel-fav" class="panel" role="tabpanel" hidden>
+        <div id="fav-list"></div>
+      </section>
+    </div>
+
+    <p class="disclaimer">ルートと警告は公開地図データとAIによる推定です。未登録の制限や工事規制があり得るため、必ず現地の標識を優先してください。</p>
+  </aside>
+
+  <!-- 車両プロファイル -->
+  <dialog id="dlg-vehicle" class="dlg" aria-labelledby="dlg-vehicle-title">
+    <form id="form-vehicle" novalidate>
+      <h2 id="dlg-vehicle-title" class="dlg-title">車両の寸法</h2>
+      <p class="dlg-lead">車検証の数値を入力してください。高さと幅は10cmの余裕を足してルートを探します。</p>
+
+      <label class="fld">
+        <span>車両の呼び名（任意）</span>
+        <input name="name" class="in" maxlength="40" placeholder="例：うちのキャンカー">
+      </label>
+
+      <div class="grid grid-cols-2 gap-3">
+        <label class="fld"><span>全高（m）</span><input name="height" class="in" type="number" inputmode="decimal" step="0.01" min="1.5" max="4" placeholder="2.90"></label>
+        <label class="fld"><span>車幅（m）</span><input name="width" class="in" type="number" inputmode="decimal" step="0.01" min="1.4" max="2.6" placeholder="2.00"></label>
+        <label class="fld"><span>全長（m）</span><input name="length" class="in" type="number" inputmode="decimal" step="0.01" min="3" max="12" placeholder="5.40"></label>
+        <label class="fld"><span>車両総重量（t）</span><input name="weight" class="in" type="number" inputmode="decimal" step="0.01" min="0.5" max="25" placeholder="3.50"></label>
+      </div>
+
+      <fieldset class="fset">
+        <legend>駆動方式</legend>
+        <div class="seg">
+          <label><input type="radio" name="drive" value="2WD" checked><span>2WD</span></label>
+          <label><input type="radio" name="drive" value="4WD"><span>4WD</span></label>
+        </div>
+      </fieldset>
+
+      <label class="toggle"><input type="checkbox" name="trailer" id="veh-trailer"><span>トレーラーを牽引する</span></label>
+      <div id="trailer-fields" class="grid grid-cols-2 gap-3" hidden>
+        <label class="fld"><span>トレーラー長（m）</span><input name="trailerLength" class="in" type="number" inputmode="decimal" step="0.01" min="0" max="10" placeholder="4.00"></label>
+        <label class="fld"><span>トレーラー重量（t）</span><input name="trailerWeight" class="in" type="number" inputmode="decimal" step="0.01" min="0" max="10" placeholder="0.75"></label>
+      </div>
+
+      <p id="veh-err" class="err" role="alert" hidden></p>
+
+      <details class="transfer">
+        <summary>別の端末へデータを引き継ぐ</summary>
+        <p class="hint">この端末の引き継ぎコードです。他の端末で入力すると、車両設定とお気に入りを読み込めます。コードは他人に教えないでください。</p>
+        <div class="pt-row">
+          <input id="my-code" class="in code" readonly aria-label="この端末の引き継ぎコード">
+          <button id="btn-copy-code" class="btn-sq" type="button">コピー</button>
+        </div>
+        <div class="pt-row">
+          <input id="in-code" class="in code" placeholder="引き継ぎコードを入力" autocomplete="off" aria-label="引き継ぎコード">
+          <button id="btn-restore" class="btn-sq" type="button">読み込む</button>
+        </div>
+      </details>
+
+      <div class="dlg-actions">
+        <button id="veh-cancel" class="btn-ghost" type="button">閉じる</button>
+        <button class="btn-primary" type="submit">保存する</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
