@@ -1,5 +1,5 @@
 /* ============================================================
- *  RV_navi  フロントエンド  app.js v1.1.3
+ *  RV_navi  フロントエンド  app.js v1.1.4
  *  GitHub Pages + Leaflet + GAS(Code.gs)
  *  読み込み順：config.js → auth.js → app.js（API通信・会員機能は auth.js）
  *  座標：API とのやり取りは [経度, 緯度]、Leaflet は [緯度, 経度]
@@ -7,7 +7,7 @@
 'use strict';
 
 window.RV_FILES = window.RV_FILES || {};
-window.RV_FILES.app = '1.1.3';
+window.RV_FILES.app = '1.1.4';
 
 const CONFIG = {
   // GAS の URL は config.js に書きます
@@ -229,9 +229,7 @@ function onMapClick(e) {
       map.closePopup();
     };
   });
-  if (isLoggedIn()) {
-    api('reverse', { lat, lng }).then(d => { if (labelEl) labelEl.textContent = d.label; }).catch(() => {});
-  }
+  reverseClient(lat, lng).then(label => { if (label && labelEl) labelEl.textContent = label; });
 }
 
 /* ============================================================
@@ -268,13 +266,13 @@ function setPoint(kind, pt, o = {}) {
 }
 
 function refineLabel(pt) {
-  if (!isLoggedIn()) return;
-  api('reverse', { lat: pt.lat, lng: pt.lng }).then(d => {
-    pt.label = d.label;
-    if (pt === state.start) $('in-start').value = d.label;
-    if (pt === state.end) $('in-end').value = d.label;
+  reverseClient(pt.lat, pt.lng).then(label => {
+    if (!label) return;
+    pt.label = label;
+    if (pt === state.start) $('in-start').value = label;
+    if (pt === state.end) $('in-end').value = label;
     renderPoints();
-  }).catch(() => {});
+  });
 }
 
 function afterPointsChanged(reroute) {
@@ -311,32 +309,87 @@ function renderPoints() {
     </li>`).join('');
 }
 
+/* ------------------------------------------------------------
+ *  地点検索はブラウザから直接行う（速い・GASの時間やAPI枠を使わない）
+ *   住所 → 国土地理院 住所検索 ／ 施設名 → OpenStreetMap Nominatim
+ * ---------------------------------------------------------- */
+async function fetchJsonTimeout(url, ms) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), ms);
+  try {
+    const r = await fetch(url, { signal: ctl.signal, headers: { Accept: 'application/json' } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/** Nominatim の住所表記（逆順・長い）を日本語の並びに整える */
+function osmLabel(x) {
+  const parts = String(x.display_name || '').split(', ')
+    .filter(p => p && p !== '日本' && !/^\d{3}-?\d{4}$/.test(p));
+  const head = x.name || parts[0] || '';
+  const rest = (x.name ? parts.slice(1) : parts.slice(1)).reverse().join('');
+  return rest ? `${head}（${rest}）` : head;
+}
+
+async function geocodeClient(q) {
+  const c = map.getCenter();
+  const gsi = fetchJsonTimeout('https://msearch.gsi.go.jp/address-search/AddressSearch?q=' + encodeURIComponent(q), 8000)
+    .then(a => (Array.isArray(a) ? a : []).slice(0, 6).map(f => ({
+      label: f.properties.title,
+      lat: r5(f.geometry.coordinates[1]), lng: r5(f.geometry.coordinates[0]),
+    })))
+    .catch(() => []);
+  const vb = [c.lng - 1.5, c.lat + 1.2, c.lng + 1.5, c.lat - 1.2].map(v => v.toFixed(3)).join(',');
+  const osm = fetchJsonTimeout('https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=jp&accept-language=ja&limit=6'
+      + '&viewbox=' + vb + '&q=' + encodeURIComponent(q), 8000)
+    .then(a => (Array.isArray(a) ? a : []).map(x => ({ label: osmLabel(x), lat: r5(+x.lat), lng: r5(+x.lon) })))
+    .catch(() => []);
+  const [ga, oa] = await Promise.all([gsi, osm]);
+  // 番地らしい入力は住所検索を先に、それ以外は施設名検索を先に並べる
+  const list = /[0-9０-９丁番号]/.test(q) ? ga.concat(oa) : oa.concat(ga);
+  const seen = {};
+  return list.filter(r => {
+    if (!isFinite(r.lat) || !isFinite(r.lng)) return false;
+    const k = r.lat.toFixed(4) + ',' + r.lng.toFixed(4);
+    if (seen[k]) return false;
+    seen[k] = 1;
+    return true;
+  }).slice(0, 10);
+}
+
+async function reverseClient(lat, lng) {
+  try {
+    const x = await fetchJsonTimeout('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&accept-language=ja'
+      + '&lat=' + lat + '&lon=' + lng, 8000);
+    return x && x.display_name ? osmLabel(x) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 async function doGeocode(which) {
   const input = $('in-' + which), box = $('res-' + which);
   const q = input.value.trim();
   if (!q) { toast('地名・住所・施設名を入力してください'); return; }
-  if (!requireLogin()) return;
   box.hidden = false;
   box.innerHTML = '<div class="gc-item muted">検索しています…</div>';
-  try {
-    const c = map.getCenter();
-    const d = await api('geocode', { q, lat: c.lat, lng: c.lng });
-    if (!d.results.length) {
-      box.innerHTML = '<div class="gc-item muted">見つかりません。市町村名を付けて検索してください</div>';
-      return;
-    }
-    box.innerHTML = d.results.map((r, i) =>
-      `<button class="gc-item" type="button" data-i="${i}">${esc(r.label)}</button>`).join('');
-    box.querySelectorAll('button').forEach(b => {
-      b.onclick = () => {
-        const r = d.results[+b.dataset.i];
-        setPoint(which, { lat: r.lat, lng: r.lng, label: r.label });
-        if (!curRoute()) map.setView([r.lat, r.lng], 13);
-      };
-    });
-  } catch (e) {
-    box.innerHTML = `<div class="gc-item err">${esc(e.message)}</div>`;
+  const results = await geocodeClient(q);
+  if (!results.length) {
+    box.innerHTML = '<div class="gc-item muted">見つかりません。市町村名を付けるか、地図をタップして指定してください</div>';
+    return;
   }
+  box.innerHTML = results.map((r, i) =>
+    `<button class="gc-item" type="button" data-i="${i}">${esc(r.label)}</button>`).join('');
+  box.querySelectorAll('button').forEach(b => {
+    b.onclick = () => {
+      const r = results[+b.dataset.i];
+      setPoint(which, { lat: r.lat, lng: r.lng, label: r.label });
+      if (!curRoute()) map.setView([r.lat, r.lng], 14);
+    };
+  });
 }
 
 function locate(setStart) {

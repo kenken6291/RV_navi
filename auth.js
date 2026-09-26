@@ -1,5 +1,5 @@
 /* ============================================================
- *  RV_navi  会員認証・API通信  auth.js v1.1.3
+ *  RV_navi  会員認証・API通信  auth.js v1.1.4
  *  - 会員登録（メールに仮パスワード送信）
  *  - ログイン／ログアウト（5回失敗で15分ロックはサーバー側）
  *  - 初回ログイン時のパスワード変更（必須）
@@ -10,7 +10,7 @@
 'use strict';
 
 window.RV_FILES = window.RV_FILES || {};
-window.RV_FILES.auth = '1.1.3';
+window.RV_FILES.auth = '1.1.4';
 
 const AUTH_LS = { token: 'rvnavi_token', member: 'rvnavi_member' };
 
@@ -36,15 +36,24 @@ function apiReady() {
 
 async function api(action, params = {}) {
   if (!apiReady()) throw new Error('config.js の GAS_URL にウェブアプリのURLを設定してください');
+  // 危険度解析は最大5分、その他は1分で打ち切る
+  const limitMs = action === 'analyzeRoute' ? 330000 : (action === 'searchAlongRoute' || action === 'restPlan') ? 300000 : 60000;
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), limitMs);
   let res;
   try {
     res = await fetch(gasUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ action, token: Auth.token, params }),
+      signal: ctl.signal,
     });
   } catch (e) {
-    throw new Error('サーバーに接続できませんでした。電波状況を確認してください');
+    throw new Error(e.name === 'AbortError'
+      ? 'サーバーの応答がありません。時間をおいてもう一度お試しください'
+      : 'サーバーに接続できませんでした。電波状況を確認してください');
+  } finally {
+    clearTimeout(timer);
   }
   if (!res.ok) throw new Error(`サーバーエラーです（HTTP ${res.status}）`);
   const j = await res.json().catch(() => null);
