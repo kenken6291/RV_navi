@@ -1,17 +1,19 @@
 /* ============================================================
- *  RV_navi  フロントエンド  app.js v1.0.0
+ *  RV_navi  フロントエンド  app.js v1.1.3
  *  GitHub Pages + Leaflet + GAS(Code.gs)
+ *  読み込み順：config.js → auth.js → app.js（API通信・会員機能は auth.js）
  *  座標：API とのやり取りは [経度, 緯度]、Leaflet は [緯度, 経度]
  * ============================================================ */
 'use strict';
 
+window.RV_FILES = window.RV_FILES || {};
+window.RV_FILES.app = '1.1.3';
+
 const CONFIG = {
-  // ↓ GAS をウェブアプリとしてデプロイした URL を貼り付け
-  GAS_URL: 'https://script.google.com/macros/s/AKfycbwC0JRLwjPg5eFxn5cpkQxmOhDBa_XAF0ustWcHZEAn1shhRfG7bWLBH34zZFDx0G-QHg/exec',
+  // GAS の URL は config.js に書きます
   CENTER: [36.2, 138.25],
   ZOOM: 6,
   LS: {
-    client: 'rvnavi_client',
     vehicle: 'rvnavi_vehicle',
     favs: 'rvnavi_favs',
     dark: 'rvnavi_dark',
@@ -47,7 +49,6 @@ const WARN_GLYPH = {
 const RISK_LABEL = { low: '低い', medium: '中程度', high: '高い', very_high: '非常に高い' };
 
 const state = {
-  clientId: null,
   vehicle: null,
   start: null, end: null, vias: [],
   opts: { avoidTolls: false, avoidHighways: false, preference: 'recommended' },
@@ -93,6 +94,10 @@ function clockAfter(min, base) {
 function fmtDist(m) {
   return m < 1000 ? `${Math.round(m)}m` : `${(m / 1000).toFixed(1)}km`;
 }
+/** 標識の数字が長いときは文字を小さくするクラス */
+function longCls(txt) {
+  return String(txt).length >= 4 ? ' rs-long' : '';
+}
 function num1(x) {
   if (x == null || !isFinite(x)) return '';
   const v = Math.round(x * 100) / 100;
@@ -121,32 +126,6 @@ function tollKm(r) {
 
 const empty = t => `<p class="empty">${esc(t)}</p>`;
 const loadingBlock = t => `<div class="loading"><span class="spin" aria-hidden="true"></span><span>${esc(t)}</span></div>`;
-
-/* ============================================================
- *  API（GAS）
- * ========================================================== */
-function apiReady() {
-  return /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(CONFIG.GAS_URL);
-}
-
-async function api(action, params = {}) {
-  if (!apiReady()) throw new Error('app.js の GAS_URL にウェブアプリのURLを設定してください');
-  let res;
-  try {
-    res = await fetch(CONFIG.GAS_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action, clientId: state.clientId, params }),
-    });
-  } catch (e) {
-    throw new Error('サーバーに接続できませんでした。電波状況を確認してください');
-  }
-  if (!res.ok) throw new Error(`サーバーエラーです（HTTP ${res.status}）`);
-  const j = await res.json().catch(() => null);
-  if (!j) throw new Error('サーバーの応答を読み取れませんでした');
-  if (!j.ok) throw new Error(j.error || '処理に失敗しました');
-  return j.data;
-}
 
 /* ============================================================
  *  表示の補助
@@ -250,7 +229,7 @@ function onMapClick(e) {
       map.closePopup();
     };
   });
-  if (apiReady()) {
+  if (isLoggedIn()) {
     api('reverse', { lat, lng }).then(d => { if (labelEl) labelEl.textContent = d.label; }).catch(() => {});
   }
 }
@@ -289,7 +268,7 @@ function setPoint(kind, pt, o = {}) {
 }
 
 function refineLabel(pt) {
-  if (!apiReady()) return;
+  if (!isLoggedIn()) return;
   api('reverse', { lat: pt.lat, lng: pt.lng }).then(d => {
     pt.label = d.label;
     if (pt === state.start) $('in-start').value = d.label;
@@ -336,6 +315,7 @@ async function doGeocode(which) {
   const input = $('in-' + which), box = $('res-' + which);
   const q = input.value.trim();
   if (!q) { toast('地名・住所・施設名を入力してください'); return; }
+  if (!requireLogin()) return;
   box.hidden = false;
   box.innerHTML = '<div class="gc-item muted">検索しています…</div>';
   try {
@@ -405,6 +385,7 @@ function clearRoute() {
 }
 
 async function searchRoute() {
+  if (!requireLogin()) return;
   if (!state.vehicle) {
     openVehicle();
     toast('先に車両の寸法を登録してください');
@@ -550,13 +531,13 @@ function signHtml(h) {
   const d = h.detail || {};
   switch (h.type) {
     case 'height_limit':
-      return d.limitM != null ? `<span class="rs rs-h rs-sm"><b>${num1(d.limitM)}</b><i>m</i></span>` : warnSign(h, '高');
+      return d.limitM != null ? `<span class="rs rs-h rs-sm${longCls(num1(d.limitM))}"><b>${num1(d.limitM)}</b><i>m</i></span>` : warnSign(h, '高');
     case 'width_limit':
-      return `<span class="rs rs-w rs-sm"><b>${num1(d.limitM)}</b><i>m</i></span>`;
+      return `<span class="rs rs-w rs-sm${longCls(num1(d.limitM))}"><b>${num1(d.limitM)}</b><i>m</i></span>`;
     case 'weight_limit':
-      return `<span class="rs rs-sm"><b>${num1(d.limitT)}</b><i>t</i></span>`;
+      return `<span class="rs rs-sm${longCls(num1(d.limitT))}"><b>${num1(d.limitT)}</b><i>t</i></span>`;
     case 'length_limit':
-      return `<span class="rs rs-sm"><b>${num1(d.limitM)}</b><i>m</i></span>`;
+      return `<span class="rs rs-sm${longCls(num1(d.limitM))}"><b>${num1(d.limitM)}</b><i>m</i></span>`;
     case 'barrier':
       return '<span class="rs-noentry" aria-hidden="true"></span>';
     default:
@@ -744,6 +725,7 @@ function renderRadius() {
 }
 
 async function searchPois() {
+  if (!requireLogin()) return;
   const r = curRoute();
   if (!r) { toast('先にルートを探してください', 'err'); return; }
   if (!state.poiCats.size) { toast('探す施設を1つ以上選んでください', 'err'); return; }
@@ -900,6 +882,7 @@ function initRestDepart() {
 }
 
 async function planRest() {
+  if (!requireLogin()) return;
   const r = curRoute();
   if (!r) { toast('先にルートを探してください', 'err'); return; }
   const v = $('rest-depart').value;
@@ -1009,7 +992,7 @@ let favSaveTimer;
 function saveFavs() {
   lsSet(CONFIG.LS.favs, state.favorites);
   clearTimeout(favSaveTimer);
-  if (!apiReady()) return;
+  if (!isLoggedIn()) return;
   favSaveTimer = setTimeout(() => {
     api('saveData', { type: 'favorites', data: state.favorites }).catch(e => console.warn('お気に入りのバックアップ失敗', e));
   }, 1500);
@@ -1109,10 +1092,11 @@ function renderVehicle() {
     b.setAttribute('aria-label', '車両の寸法を登録');
     return;
   }
+  const h = num1(v.height), w = num1(v.width), t = num1(totalWeight(v));
   b.innerHTML = `
-    <span class="rs rs-h"><b>${num1(v.height)}</b><i>m</i></span>
-    <span class="rs rs-w"><b>${num1(v.width)}</b><i>m</i></span>
-    <span class="rs"><b>${num1(totalWeight(v))}</b><i>t</i></span>`;
+    <span class="rs rs-h${longCls(h)}"><b>${h}</b><i>m</i></span>
+    <span class="rs rs-w${longCls(w)}"><b>${w}</b><i>m</i></span>
+    <span class="rs${longCls(t)}"><b>${t}</b><i>t</i></span>`;
   b.setAttribute('aria-label', `車両の寸法：高さ${v.height}m、幅${v.width}m、重量${totalWeight(v)}t、全長${v.length}m。変更する`);
 }
 
@@ -1127,8 +1111,6 @@ function fillVehicleForm() {
   f.elements.trailer.checked = !!v.trailer;
   $('trailer-fields').hidden = !v.trailer;
   $('veh-err').hidden = true;
-  $('my-code').value = state.clientId;
-  $('in-code').value = '';
 }
 
 function openVehicle() {
@@ -1177,61 +1159,53 @@ function saveVehicle(ev) {
   renderVehicle();
   $('dlg-vehicle').close();
   toast('車両の寸法を保存しました');
-  if (apiReady()) api('saveData', { type: 'profile', data: v }).catch(e => console.warn('車両のバックアップ失敗', e));
+  if (isLoggedIn()) api('saveData', { type: 'profile', data: v }).catch(e => console.warn('車両のバックアップ失敗', e));
   if (changed && state.start && state.end && state.routes.length) {
     toast('車両の寸法が変わったため、ルートを探し直します');
     searchRoute();
   }
 }
 
-async function restoreFromCode() {
-  const code = $('in-code').value.trim();
-  if (!/^[A-Za-z0-9_-]{16,64}$/.test(code)) { toast('引き継ぎコードの形式が正しくありません', 'err'); return; }
-  if (code === state.clientId) { toast('この端末のコードです'); return; }
-  const old = state.clientId;
-  state.clientId = code;
-  setBusy('データを読み込んでいます…');
+/** ログイン後：サーバー（Drive）の車両設定・お気に入りと同期 */
+async function syncFromServer() {
   try {
     const d = await api('loadAll');
     const prof = d.profile && d.profile.data;
-    const favs = (d.favorites && d.favorites.data) || [];
-    if (!prof && !favs.length) throw new Error('このコードのデータは見つかりませんでした');
-    lsSet(CONFIG.LS.client, code);
-    if (prof) { state.vehicle = prof; lsSet(CONFIG.LS.vehicle, prof); renderVehicle(); }
-    state.favorites = favs;
-    lsSet(CONFIG.LS.favs, favs);
-    renderFavs();
-    fillVehicleForm();
-    toast('データを引き継ぎました');
-  } catch (e) {
-    state.clientId = old;
-    toast(e.message, 'err');
-  } finally {
-    setBusy(null);
-  }
-}
-
-async function syncFromDrive() {
-  if (!apiReady()) return;
-  try {
-    const d = await api('loadAll');
-    const prof = d.profile && d.profile.data;
-    if (!state.vehicle && prof) {
+    if (prof) {
       state.vehicle = prof;
       lsSet(CONFIG.LS.vehicle, prof);
       renderVehicle();
-      toast('保存済みの車両設定を読み込みました');
+    } else if (state.vehicle) {
+      api('saveData', { type: 'profile', data: state.vehicle }).catch(() => {});
     }
-    const favs = (d.favorites && d.favorites.data) || [];
-    if (favs.length) {
-      const ids = new Set(state.favorites.map(f => f.id));
-      let added = 0;
-      favs.forEach(f => { if (f && f.id && !ids.has(f.id)) { state.favorites.push(f); added++; } });
-      if (added) { lsSet(CONFIG.LS.favs, state.favorites); renderFavs(); }
-    }
+
+    const server = (d.favorites && d.favorites.data) || [];
+    const ids = new Set(server.map(f => f.id));
+    const localOnly = state.favorites.filter(f => f && f.id && !ids.has(f.id));
+    state.favorites = server.concat(localOnly);
+    lsSet(CONFIG.LS.favs, state.favorites);
+    renderFavs();
+    if (localOnly.length) saveFavs();
   } catch (e) {
-    console.warn('Driveとの同期に失敗', e);
+    console.warn('サーバーとの同期に失敗', e);
   }
+}
+
+async function onLoggedIn() {
+  await syncFromServer();
+  if (!state.vehicle) openVehicle();
+}
+
+/** ログアウト時：共用端末でも前の人のデータが残らないよう消去 */
+function onLoggedOut(info) {
+  if (info && info.expired) return; // 期限切れ時は同じ人が再ログインする想定で残す
+  state.vehicle = null;
+  state.favorites = [];
+  lsSet(CONFIG.LS.vehicle, null);
+  lsSet(CONFIG.LS.favs, []);
+  clearRoute();
+  renderVehicle();
+  renderFavs();
 }
 
 /* ============================================================
@@ -1242,20 +1216,6 @@ function applyDark(on) {
   document.querySelector('meta[name="theme-color"]').content = on ? '#1b1e22' : '#1d4f9c';
   $('btn-dark').setAttribute('aria-pressed', String(on));
   lsSet(CONFIG.LS.dark, on);
-}
-
-/* ============================================================
- *  クライアントID（引き継ぎコード）
- * ========================================================== */
-function getClientId() {
-  let id = lsGet(CONFIG.LS.client);
-  if (!id || !/^[A-Za-z0-9_-]{16,64}$/.test(id)) {
-    const a = new Uint8Array(16);
-    crypto.getRandomValues(a);
-    id = Array.from(a, b => b.toString(16).padStart(2, '0')).join('');
-    lsSet(CONFIG.LS.client, id);
-  }
-  return id;
 }
 
 /* ============================================================
@@ -1322,11 +1282,6 @@ function bindUI() {
   $('form-vehicle').addEventListener('submit', saveVehicle);
   $('veh-cancel').onclick = () => $('dlg-vehicle').close();
   $('veh-trailer').onchange = e => { $('trailer-fields').hidden = !e.target.checked; };
-  $('btn-copy-code').onclick = async () => {
-    try { await navigator.clipboard.writeText(state.clientId); toast('引き継ぎコードをコピーしました'); }
-    catch (e) { $('my-code').select(); toast('コードを選択しました。長押しでコピーしてください'); }
-  };
-  $('btn-restore').onclick = restoreFromCode;
 
   $('btn-locate').onclick = () => locate(false);
   $('btn-dark').onclick = () => applyDark(!document.documentElement.classList.contains('dark'));
@@ -1336,7 +1291,6 @@ function bindUI() {
  *  起動
  * ========================================================== */
 function init() {
-  state.clientId = getClientId();
   state.vehicle = lsGet(CONFIG.LS.vehicle);
   state.favorites = lsGet(CONFIG.LS.favs, []) || [];
   state.showLow = !!lsGet(CONFIG.LS.lowHaz, false);
@@ -1365,11 +1319,10 @@ function init() {
   renderFavs();
 
   if (!apiReady()) {
-    toast('app.js の GAS_URL を設定すると、ルート探索が使えるようになります', 'err');
-    if (!state.vehicle) openVehicle();
+    toast('config.js の GAS_URL を設定すると、ルート探索が使えるようになります', 'err');
     return;
   }
-  syncFromDrive().finally(() => { if (!state.vehicle) openVehicle(); });
+  initAuth({ onLogin: onLoggedIn, onLogout: onLoggedOut });
 }
 
 document.addEventListener('DOMContentLoaded', init);

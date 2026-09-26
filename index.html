@@ -7,12 +7,33 @@
   <meta name="description" content="キャンピングカー専用ナビ。高さ・幅・重量制限や狭い道を避けたルートと、道の駅・RVパーク・温泉をルート沿いから探せます。">
   <title>RV_navi キャンピングカー専用ナビ</title>
 
+  <script>
+    /* 読み込みエラーを画面に表示（古いファイルが残っているときの確認用） */
+    window.RV_EXPECT = '1.1.3';
+    window.RV_FILES = {};
+    function rvBanner(msg) {
+      var b = document.getElementById('rv-error');
+      if (!b) {
+        b = document.createElement('div');
+        b.id = 'rv-error';
+        b.setAttribute('role', 'alert');
+        b.style.cssText = 'position:fixed;left:8px;right:8px;top:8px;z-index:3000;padding:12px 14px;border-radius:10px;background:#c8102e;color:#fff;font:700 14px/1.6 sans-serif;white-space:pre-line';
+        (document.body || document.documentElement).appendChild(b);
+      }
+      b.textContent = (b.textContent ? b.textContent + '\n' : '') + msg;
+    }
+    window.addEventListener('error', function (e) {
+      var t = e.target;
+      if (t && t.tagName === 'SCRIPT') rvBanner('読み込めないファイルがあります：' + (t.getAttribute('src') || '').split('?')[0] + '（GitHubにあるか確認してください）');
+      else if (e.message) rvBanner('エラー：' + e.message);
+    }, true);
+  </script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = { darkMode: 'class', corePlugins: { preflight: false } };
   </script>
-  <link rel="stylesheet" href="style.css?v=1.1.2">
+  <link rel="stylesheet" href="style.css?v=1.1.3">
 </head>
 <body>
 
@@ -321,8 +342,20 @@
   </dialog>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-  <script src="config.js?v=1.1.2"></script>
-  <script src="auth.js?v=1.1.2"></script>
-  <script src="app.js?v=1.1.2"></script>
+  <script src="config.js?v=1.1.3"></script>
+  <script src="auth.js?v=1.1.3"></script>
+  <script src="app.js?v=1.1.3"></script>
+  <script>
+    window.addEventListener('load', function () {
+      var want = window.RV_EXPECT, bad = [];
+      ['auth', 'app'].forEach(function (k) {
+        if (window.RV_FILES[k] !== want) bad.push(k + '.js（' + (window.RV_FILES[k] || '古い版') + '）');
+      });
+      var css = getComputedStyle(document.documentElement).getPropertyValue('--rv-css').trim();
+      if (css !== want) bad.push('style.css（' + (css || '古い版') + '）');
+      if (!window.RV_CONFIG) bad.push('config.js（見つかりません）');
+      if (bad.length) rvBanner('古いファイルが残っています：' + bad.join('、') + '\n最新版（v' + want + '）をGitHubに上げ、Ctrl+F5 で再読み込みしてください');
+    });
+  </script>
 </body>
 </html>

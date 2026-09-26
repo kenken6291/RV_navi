@@ -1,10 +1,11 @@
 /* ============================================================
-   RV_navi  style.css v1.0.0
+   RV_navi  style.css v1.1.3
    デザインの軸：日本の道路標識（案内標識の青・規制標識の赤丸・警戒標識の黄ひし形）
    フォント：BIZ UDPゴシック（Windows標準）→ ヒラギノ → Noto（外部フォント読み込みなし）
    ============================================================ */
 
 :root {
+  --rv-css: 1.1.3;
   --sign-blue: #1d4f9c;
   --hw-green: #0e6b48;
   --warn: #f3c300;
@@ -304,7 +305,7 @@ a { color: var(--sign-blue); }
 
 .opts { margin-top: 12px; display: grid; gap: 4px; }
 .fld { display: block; margin-top: 12px; }
-.fld > span { display: block; margin-bottom: 4px; font-size: .84rem; font-weight: 700; color: var(--muted); }
+.fld > span, .fld > label { display: block; margin-bottom: 4px; font-size: .84rem; font-weight: 700; color: var(--muted); }
 .fld-inline { display: flex; align-items: center; gap: 12px; min-height: 52px; }
 .fld-inline > span { flex: none; font-weight: 700; }
 .fld-inline .sel { flex: 1; }
@@ -486,8 +487,6 @@ a { color: var(--sign-blue); }
 .dlg-lead { margin-top: 6px; font-size: .88rem; color: var(--muted); }
 .dlg-actions { display: flex; gap: 10px; margin-top: 18px; }
 .dlg-actions .btn-primary { flex: 1; margin-top: 0; }
-.transfer { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
-.transfer summary { min-height: 44px; display: flex; align-items: center; font-weight: 700; cursor: pointer; }
 
 /* スマホではヘッダーを小さくして一覧の表示領域を確保 */
 @media (max-width: 899px) {
@@ -499,11 +498,78 @@ a { color: var(--sign-blue); }
   .veh-signs .rs b { font-size: .88rem; }
   .veh-signs .rs i { margin-bottom: 12px; }
   .veh-signs .rs-w b { font-size: .64rem; letter-spacing: -.04em; }
+  .veh-signs .rs.rs-long b { font-size: .7rem; }
+  .veh-signs .rs-w.rs-long b { font-size: .58rem; }
+  .acct-bar { margin-top: 6px; }
+  .acct-bar .btn-sm { min-height: 44px; padding: 0 12px; font-size: .86rem; }
   .veh-signs .rs-w i { font-size: .5rem; margin-right: 4px; }
   .veh-signs .rs-w::before { left: 1px; }
   .veh-signs .rs-w::after { right: 1px; }
   .tabs { padding-top: 8px; }
 }
+
+/* 4桁以上の数字（1.95 / 2.52 など）は文字を小さく */
+.rs.rs-long b { font-size: .8rem; letter-spacing: -.05em; }
+.rs.rs-long i { font-size: .52rem; }
+.rs-w.rs-long b { font-size: .66rem; }
+.rs-w.rs-long::before { left: 1px; }
+.rs-w.rs-long::after { right: 1px; }
+.rs-sm.rs-long b { font-size: .6rem; }
+.rs-sm.rs-long i { font-size: .44rem; }
+
+/* ---------- ログイン状態バー ---------- */
+.acct-bar { flex: none; display: flex; align-items: center; gap: 8px; margin: 8px 12px 0; }
+.acct-bar-name {
+  flex: 1; min-width: 0; min-height: 48px; padding: 0 12px;
+  border-radius: 10px; text-align: left;
+  font-weight: 700; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.acct-bar-name.is-in { color: var(--ink); background: var(--soft); }
+.acct-bar-name.is-in::before { content: "●"; color: var(--hw-green); margin-right: 6px; font-size: .75rem; }
+.acct-bar .btn-sm { flex: none; }
+
+/* ---------- 会員認証 ---------- */
+.fab.is-in { background: var(--sign-blue); color: #fff; }
+.dark .fab.is-in { background: #3a6cc0; color: #fff; }
+.dlg .dlg-body { padding: 20px; }
+.dlg .dlg-body form { padding: 0; }
+.auth-form { margin-top: 4px; }
+
+.pw-wrap { position: relative; }
+.pw-wrap .in { padding-right: 76px; }
+.pw-toggle {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  min-width: 60px; height: 40px; padding: 0 10px;
+  border-radius: 8px; background: var(--soft);
+  font-weight: 700; font-size: .86rem;
+}
+.pw-toggle[aria-pressed="true"] { background: var(--asphalt); color: #fff; }
+
+.auth-links { display: grid; gap: 2px; margin-top: 12px; }
+.link {
+  min-height: 44px; padding: 0 2px; text-align: left;
+  color: var(--sign-blue); font-weight: 700; text-decoration: underline; text-underline-offset: 3px;
+}
+.dark .link { color: #8fb4ec; }
+
+.auth-msg { margin-top: 14px; padding: 10px 12px; border-radius: 10px; font-weight: 700; font-size: .9rem; line-height: 1.5; }
+.auth-msg.is-err { background: #fde8eb; color: #a80d26; }
+.auth-msg.is-ok { background: #e2f3eb; color: #0b5a3c; }
+.dark .auth-msg.is-err { background: #4a1f26; color: #ffc2cb; }
+.dark .auth-msg.is-ok { background: #173a2c; color: #b4ebd0; }
+
+.consent { margin-top: 14px; padding: 12px 14px; border-radius: 10px; background: var(--soft); font-size: .86rem; }
+.consent-title { font-weight: 700; }
+.consent ul { margin: 6px 0 4px; padding-left: 1.2em; }
+.consent li { margin: 4px 0; }
+.check { display: flex; align-items: center; gap: 10px; min-height: 48px; font-weight: 700; font-size: 1rem; cursor: pointer; }
+.check input { width: 24px; height: 24px; margin: 0; accent-color: var(--sign-blue); }
+
+.acct-row { display: grid; gap: 2px; margin-top: 6px; }
+.acct-row span { font-size: .84rem; font-weight: 700; color: var(--muted); }
+.acct-row b { word-break: break-all; }
+.acct-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px; }
 
 /* ---------- PC：左側の固定パネル ---------- */
 @media (min-width: 900px) {
