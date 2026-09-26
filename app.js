@@ -1,5 +1,5 @@
 /* ============================================================
- *  RV_navi  フロントエンド  app.js v1.2.0
+ *  RV_navi  フロントエンド  app.js v1.2.1
  *  GitHub Pages + Leaflet + GAS(Code.gs)
  *  読み込み順：config.js → auth.js → app.js（API通信・会員機能は auth.js）
  *  座標：API とのやり取りは [経度, 緯度]、Leaflet は [緯度, 経度]
@@ -7,7 +7,7 @@
 'use strict';
 
 window.RV_FILES = window.RV_FILES || {};
-window.RV_FILES.app = '1.2.0';
+window.RV_FILES.app = '1.2.1';
 
 const CONFIG = {
   // GAS の URL は config.js に書きます
@@ -429,10 +429,150 @@ function parseLatLng(input) {
   return null;
 }
 
+/* ------------------------------------------------------------
+ *  地図アプリの共有リンクの読み取り
+ *   Googleマップ（maps.app.goo.gl の短縮リンクは GAS で展開）
+ *   Appleマップ／Yahoo!地図／OpenStreetMap／地理院地図／geo: リンク
+ *   住所＋リンクの形で貼り付けた場合にも対応
+ * ---------------------------------------------------------- */
+function extractLink(text) {
+  const m = String(text || '').match(/(https?:\/\/[^\s<>"「」]+|geo:[^\s]+)/i);
+  return m ? m[1].replace(/[)）。、,]+$/, '') : null;
+}
+
+function isShortMapLink(u) {
+  return /^https?:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|g\.co\/kgs|maps\.google\.[a-z.]+\/\?cid|(www\.)?google\.[a-z.]+\/maps\?cid)/i.test(u)
+    || /^https?:\/\/[^/]*goo\.gl\//i.test(u);
+}
+
+function safeDecode(u) {
+  let out = u;
+  for (let i = 0; i < 2; i++) {
+    try { out = decodeURIComponent(out.replace(/\+/g, ' ')); } catch (e) { break; }
+  }
+  return out;
+}
+
+function parseMapUrl(raw) {
+  if (!raw) return null;
+  const u = safeDecode(raw);
+  const N = '(-?\\d{1,3}\\.\\d+)';
+  const ok = (a, b) => isFinite(a) && isFinite(b) && Math.abs(a) <= 90 && Math.abs(b) <= 180 && !(a === 0 && b === 0);
+  const pick = (re, swap) => {
+    const m = u.match(re);
+    if (!m) return null;
+    let a = +m[1], b = +m[2];
+    if (swap) [a, b] = [b, a];
+    return ok(a, b) ? { lat: r5(a), lng: r5(b) } : null;
+  };
+
+  // 場所の名前（ラベル用）
+  let name = null;
+  const pm = u.match(/\/maps\/place\/([^/@?]+)/);
+  if (pm && !/^-?\d/.test(pm[1].trim())) name = pm[1].trim();
+  const qm = u.match(/[?&](?:q|query|name)=([^&]+)/);
+  if (!name && qm && !/^\s*(loc:)?\s*-?\d{1,3}\.\d+\s*,/.test(qm[1])) name = qm[1].trim();
+
+  // 1. Googleのピン位置（!3d緯度!4d経度）が最も正確
+  let r = pick(new RegExp('!3d' + N + '!4d' + N));
+  // 2. 経路リンクは最後の地点（目的地）
+  if (!r) {
+    const dm = u.match(/\/maps\/dir\/(.+?)(?:\/@|\/data=|\?|$)/);
+    if (dm) {
+      const pairs = [...dm[1].matchAll(new RegExp(N + ',\\s*' + N, 'g'))];
+      if (pairs.length) {
+        const last = pairs[pairs.length - 1];
+        if (ok(+last[1], +last[2])) r = { lat: r5(+last[1]), lng: r5(+last[2]) };
+      }
+    }
+  }
+  // 3. 各種パラメータ
+  r = r
+    || pick(new RegExp('[?&](?:q|query|ll|sll|center|destination|daddr|coordinate|pin|marker)=\\s*(?:loc:)?\\s*' + N + '\\s*,\\s*' + N))
+    || pick(new RegExp('/maps/(?:search|place)/\\s*' + N + ',\\s*' + N));
+  // 4. 度分秒で書かれた place/search
+  if (!r) {
+    const seg = u.match(/\/maps\/(?:search|place)\/([^/@?]+)/);
+    if (seg) {
+      const ll = parseLatLng(seg[1]);
+      if (ll) { r = ll; name = null; }
+    }
+  }
+  // 5. 緯度・経度が別々のパラメータ（Yahoo!地図、OSMのマーカーなど）
+  if (!r) {
+    const la = u.match(new RegExp('[?&#](?:m?lat|latitude)=' + N));
+    const lo = u.match(new RegExp('[?&#](?:m?lon|m?lng|longitude)=' + N));
+    if (la && lo && ok(+la[1], +lo[1])) r = { lat: r5(+la[1]), lng: r5(+lo[1]) };
+  }
+  // 6. OpenStreetMap（#map=z/緯度/経度）、地理院地図（#z/緯度/経度）、geo:
+  r = r
+    || pick(new RegExp('#map=\\d+(?:\\.\\d+)?/' + N + '/' + N))
+    || pick(new RegExp('maps\\.gsi\\.go\\.jp/?[^#]*#\\d+(?:\\.\\d+)?/' + N + '/' + N))
+    || pick(new RegExp('^geo:' + N + ',' + N, 'i'))
+  // 7. 表示範囲の中心（@緯度,経度）
+    || pick(new RegExp('@' + N + ',' + N));
+
+  if (!r) return name ? { name } : null;
+  return { lat: r.lat, lng: r.lng, name };
+}
+
+/** リンク以外に貼り付けられた文字（住所など）を取り出す */
+function textBesideLink(text, link) {
+  return String(text || '').replace(link, ' ')
+    .replace(/〒?\s*\d{3}-?\d{4}/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+}
+
+/** リンクを含む入力の処理。地点を設定できたら true、文字検索に回すなら文字列を返す */
+async function handleMapLink(which, q, box) {
+  const link = extractLink(q);
+  if (!link) return false;
+  const beside = textBesideLink(q, link);
+  let r = parseMapUrl(link);
+
+  if ((!r || r.lat == null) && /^https?:/i.test(link) && (isShortMapLink(link) || /google\./i.test(link))) {
+    if (!requireLogin()) return true;
+    box.hidden = false;
+    box.innerHTML = '<div class="gc-item muted">共有リンクを確認しています…</div>';
+    try {
+      const d = await api('expandMapUrl', { url: link });
+      const r2 = parseMapUrl(d.url);
+      if (r2 && r2.lat != null) r = r2;
+      else if (d.lat != null) r = { lat: d.lat, lng: d.lng, name: (r2 && r2.name) || null };
+      else if (r2 && r2.name) r = r2;
+    } catch (e) {
+      if (!beside) {
+        box.innerHTML = `<div class="gc-item err">${esc(e.message)}</div>`;
+        return true;
+      }
+    }
+  }
+
+  if (r && r.lat != null) {
+    box.hidden = true;
+    const label = beside || r.name || `緯度 ${r.lat.toFixed(5)}, 経度 ${r.lng.toFixed(5)}`;
+    setPoint(which, { lat: r.lat, lng: r.lng, label }, { refine: !beside && !r.name });
+    if (!curRoute()) map.setView([r.lat, r.lng], 15);
+    toast('リンクの地点を設定しました');
+    return true;
+  }
+  // 位置が取れなければ、住所や場所名で文字検索
+  const fallback = beside || (r && r.name) || '';
+  if (fallback) return fallback;
+  box.hidden = false;
+  box.innerHTML = '<div class="gc-item err">このリンクから位置を読み取れませんでした。住所か緯度経度で入力してください</div>';
+  return true;
+}
+
 async function doGeocode(which) {
   const input = $('in-' + which), box = $('res-' + which);
-  const q = input.value.trim();
+  let q = input.value.trim();
   if (!q) { toast('地名・住所・施設名を入力してください'); return; }
+
+  // 地図アプリの共有リンク
+  const linkResult = await handleMapLink(which, q, box);
+  if (linkResult === true) return;
+  if (typeof linkResult === 'string') { q = linkResult; input.value = q; }
 
   // 緯度経度が入力された場合は、その地点をそのまま設定
   const ll = parseLatLng(q);

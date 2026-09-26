@@ -1,5 +1,5 @@
 /* ============================================================
- *  RV_navi  走行中ナビ  nav.js v1.2.0
+ *  RV_navi  走行中ナビ  nav.js v1.2.1
  *  - 現在地を追いかける地図表示（進行方向の矢印）
  *  - 次の曲がり角の案内（案内標識風の表示＋音声）
  *  - 危険箇所の事前警告（高さ・幅制限、狭路、急坂など）
@@ -12,7 +12,7 @@
 'use strict';
 
 window.RV_FILES = window.RV_FILES || {};
-window.RV_FILES.nav = '1.2.0';
+window.RV_FILES.nav = '1.2.1';
 
 const nav = {
   active: false,

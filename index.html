@@ -9,7 +9,7 @@
 
   <script>
     /* 読み込みエラーを画面に表示（古いファイルが残っているときの確認用） */
-    window.RV_EXPECT = '1.2.0';
+    window.RV_EXPECT = '1.2.1';
     window.RV_FILES = {};
     function rvBanner(msg) {
       var b = document.getElementById('rv-error');
@@ -33,7 +33,7 @@
   <script>
     tailwind.config = { darkMode: 'class', corePlugins: { preflight: false } };
   </script>
-  <link rel="stylesheet" href="style.css?v=1.2.0">
+  <link rel="stylesheet" href="style.css?v=1.2.1">
 </head>
 <body>
 
@@ -111,7 +111,7 @@
         </div>
         <div id="res-end" class="gc-list" hidden></div>
 
-        <p class="hint">緯度経度は「35.5712, 139.3702」やGoogleマップのURLでも入力できます。地図をタップしても地点を設定でき、ピンは指で動かせます。</p>
+        <p class="hint">緯度経度（35.5712, 139.3702）や、Googleマップなどの共有リンクを貼り付けても検索できます。地図をタップしても地点を設定でき、ピンは指で動かせます。</p>
 
         <div class="opts">
           <label class="toggle"><input type="checkbox" id="opt-tolls"><span>有料道路を使わない</span></label>
@@ -375,10 +375,10 @@
   </dialog>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-  <script src="config.js?v=1.2.0"></script>
-  <script src="auth.js?v=1.2.0"></script>
-  <script src="app.js?v=1.2.0"></script>
-  <script src="nav.js?v=1.2.0"></script>
+  <script src="config.js?v=1.2.1"></script>
+  <script src="auth.js?v=1.2.1"></script>
+  <script src="app.js?v=1.2.1"></script>
+  <script src="nav.js?v=1.2.1"></script>
   <script>
     window.addEventListener('load', function () {
       var want = window.RV_EXPECT, bad = [];
