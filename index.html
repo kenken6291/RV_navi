@@ -10,6 +10,7 @@
   <script>
     /* 読み込みエラーを画面に表示（古いファイルが残っているときの確認用） */
     window.RV_EXPECT = '1.2.1';
+    window.RV_TRACK_EXPECT = '1.3.0';
     window.RV_FILES = {};
     function rvBanner(msg) {
       var b = document.getElementById('rv-error');
@@ -34,6 +35,49 @@
     tailwind.config = { darkMode: 'class', corePlugins: { preflight: false } };
   </script>
   <link rel="stylesheet" href="style.css?v=1.2.1">
+  <style id="track-style">
+    /* ---------- 走行記録（track.js v1.3.0） ---------- */
+    .tabs { grid-template-columns: repeat(6, auto); }
+    .trk-card { padding: 14px; border-radius: 14px; background: var(--soft); }
+    .trk-card.is-rec { background: var(--panel); border: 2px solid var(--reg-red); }
+    .trk-card.is-pend { border: 2px dashed var(--sev-high); }
+    .trk-head { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+    .trk-sub { margin-top: 4px; font-size: .86rem; color: var(--muted); }
+    .trk-dot { flex: none; display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--reg-red); animation: trkblink 1.2s ease-in-out infinite; }
+    .trk-dot.is-still { animation: none; background: #fff; box-shadow: 0 0 0 3px var(--reg-red); }
+    @keyframes trkblink { 50% { opacity: .25; } }
+    .trk-stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 10px; }
+    .trk-stats div { display: grid; padding: 8px 10px; border-radius: 10px; background: var(--soft); }
+    .trk-stats b { font-size: 1.3rem; line-height: 1.25; }
+    .trk-stats span { font-size: .75rem; font-weight: 700; color: var(--muted); }
+    .trk-gps { margin-top: 8px; font-size: .85rem; color: var(--muted); }
+    .trk-gps.is-weak { color: var(--reg-red); font-weight: 700; }
+    .btn-rec { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 0; }
+    .btn-stop { background: var(--reg-red); }
+    .trk-bulk { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+    .trk-bulk .btn-sm { flex: 1 1 auto; }
+    .trk-item { padding: 12px 0; border-top: 1px solid var(--line); }
+    .trk-item.is-shown .tl-name { color: #7b2cbf; }
+    .dark .trk-item.is-shown .tl-name { color: #c9a2f0; }
+    .trk-row { display: flex; align-items: flex-start; gap: 10px; }
+    .trk-check { flex: none; width: 24px; height: 24px; margin: 2px 0 0; accent-color: var(--sign-blue); }
+    .trk-body { flex: 1; min-width: 0; }
+    .trk-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .trk-actions .btn-sm { flex: 1 1 auto; }
+    .trk-pin { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; border: 2px solid #fff; color: #fff; font-weight: 700; font-size: .78rem; box-shadow: 0 2px 6px rgba(0, 0, 0, .4); }
+    .trk-pin-s { background: #7b2cbf; }
+    .trk-pin-e { background: var(--asphalt); }
+    .rec-pill {
+      position: fixed; z-index: 950; left: 10px; top: calc(var(--safe-top) + 34px);
+      display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-radius: 22px;
+      background: var(--panel); color: var(--ink); font-weight: 700; font-size: .9rem;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, .3);
+    }
+    body.nav-mode .rec-pill { display: none; }
+    .nav-btn.is-rec { color: var(--reg-red); }
+    @media (min-width: 900px) { .rec-pill { left: 444px; } }
+    @media (prefers-reduced-motion: reduce) { .trk-dot { animation: none; } }
+  </style>
 </head>
 <body>
 
@@ -43,6 +87,7 @@
     <span class="spin" aria-hidden="true"></span><span id="status-text"></span>
   </div>
   <div id="toast" class="toast" role="alert" hidden></div>
+  <button id="rec-pill" class="rec-pill" type="button" hidden aria-label="走行記録の画面を開く"></button>
 
   <div class="fabs">
     <button id="btn-account" class="fab" type="button" aria-label="ログイン・会員登録">
@@ -81,6 +126,7 @@
       <button class="tab" type="button" role="tab" data-tab="poi" aria-selected="false">施設<span class="badge" hidden></span></button>
       <button class="tab" type="button" role="tab" data-tab="rest" aria-selected="false">休憩</button>
       <button class="tab" type="button" role="tab" data-tab="fav" aria-selected="false">お気に入り<span class="badge" hidden></span></button>
+      <button class="tab" type="button" role="tab" data-tab="track" aria-selected="false">記録<span class="badge" hidden></span></button>
     </nav>
 
     <div class="panels">
@@ -177,6 +223,20 @@
       <section id="panel-fav" class="panel" role="tabpanel" hidden>
         <div id="fav-list"></div>
       </section>
+
+      <!-- 走行記録 -->
+      <section id="panel-track" class="panel" role="tabpanel" hidden>
+        <div id="trk-live"></div>
+        <label class="toggle"><input type="checkbox" id="trk-auto"><span>ナビを開始したら自動で記録する</span></label>
+        <p class="hint">実際に走った道をGPSで記録し、GPXファイルで書き出せます。画面を消したり別のアプリに切り替えると、その間は記録が止まります（ブラウザの仕組みによる制限）。長時間の記録は充電しながらお使いください。記録はこの端末の中だけに保存されます。</p>
+        <p class="lbl">保存した記録</p>
+        <div id="trk-bulk" class="trk-bulk" hidden>
+          <button id="trk-bulk-all" class="btn-sm" type="button">すべて選ぶ</button>
+          <button id="trk-bulk-dl" class="btn-sm primary" type="button" disabled>チェックした記録をまとめてGPX保存</button>
+          <button id="trk-bulk-share" class="btn-sm" type="button" disabled hidden>まとめて送る</button>
+        </div>
+        <div id="trk-list"></div>
+      </section>
     </div>
 
     <p class="disclaimer">ルートと警告は公開地図データとAIによる推定です。未登録の制限や工事規制があり得るため、必ず現地の標識を優先してください。</p>
@@ -210,6 +270,7 @@
       <div class="nav-actions">
         <button id="nav-voice" class="nav-btn" type="button" aria-pressed="true">音声 オン</button>
         <button id="nav-sim-speed" class="nav-btn" type="button" hidden>速さ ×1</button>
+        <button id="nav-rec" class="nav-btn" type="button" aria-pressed="false">記録 オフ</button>
         <button id="nav-end" class="nav-btn nav-end" type="button">案内を終了</button>
       </div>
     </section>
@@ -379,6 +440,7 @@
   <script src="auth.js?v=1.2.1"></script>
   <script src="app.js?v=1.2.1"></script>
   <script src="nav.js?v=1.2.1"></script>
+  <script src="track.js?v=1.3.0"></script>
   <script>
     window.addEventListener('load', function () {
       var want = window.RV_EXPECT, bad = [];
@@ -387,6 +449,7 @@
       });
       var css = getComputedStyle(document.documentElement).getPropertyValue('--rv-css').trim();
       if (css !== want) bad.push('style.css（' + (css || '古い版') + '）');
+      if (window.RV_FILES.track !== window.RV_TRACK_EXPECT) bad.push('track.js（' + (window.RV_FILES.track || '見つかりません') + '）');
       if (!window.RV_CONFIG) bad.push('config.js（見つかりません）');
       if (bad.length) rvBanner('古いファイルが残っています：' + bad.join('、') + '\n最新版（v' + want + '）をGitHubに上げ、Ctrl+F5 で再読み込みしてください');
     });
