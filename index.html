@@ -77,6 +77,36 @@
     .nav-btn.is-rec { color: var(--reg-red); }
     @media (min-width: 900px) { .rec-pill { left: 444px; } }
     @media (prefers-reduced-motion: reduce) { .trk-dot { animation: none; } }
+
+    /* ---------- パネルを隠す／出す（スマホ） ---------- */
+    .sheet-top { position: relative; flex: none; display: flex; align-items: center; height: 40px; }
+    .sheet-top .sheet-handle { flex: 1; height: 40px; }
+    .sheet-hide {
+      position: absolute; right: 10px; top: 4px;
+      display: flex; align-items: center; gap: 4px;
+      height: 32px; padding: 0 12px; border-radius: 16px;
+      background: var(--line); color: var(--ink); font-weight: 700; font-size: .85rem;
+    }
+    .sheet { transition: height .22s ease, transform .25s ease; }
+    .sheet[data-state="hide"] { height: auto; transform: translateY(105%); pointer-events: none; box-shadow: none; }
+    .sheet[data-state="hide"] .panels,
+    .sheet[data-state="hide"] .disclaimer { display: none; }
+    .sheet-show {
+      position: fixed; z-index: 1000; left: 50%; transform: translateX(-50%);
+      bottom: calc(var(--safe-bottom) + 16px);
+      display: flex; align-items: center; gap: 6px;
+      min-height: 52px; padding: 0 22px; border-radius: 26px;
+      background: var(--sign-blue); color: #fff; font-weight: 700; font-size: 1rem;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, .35);
+    }
+    body.nav-mode .sheet-show { display: none; }
+    @media (min-width: 900px) {
+      .sheet-top { display: none; }
+      .sheet[data-state="hide"] { transform: none; pointer-events: auto; }
+      .sheet[data-state="hide"] .panels, .sheet[data-state="hide"] .disclaimer { display: block; }
+      .sheet-show { display: none !important; }
+    }
+    @media (prefers-reduced-motion: reduce) { .sheet { transition: none; } }
   </style>
 </head>
 <body>
@@ -102,7 +132,10 @@
   </div>
 
   <aside id="sheet" class="sheet" data-state="peek" aria-label="操作パネル">
-    <button id="sheet-handle" class="sheet-handle" type="button" aria-label="パネルの大きさを切り替え"><span></span></button>
+    <div class="sheet-top" id="sheet-top">
+      <button id="sheet-handle" class="sheet-handle" type="button" aria-label="パネルの大きさを切り替え"><span></span></button>
+      <button id="sheet-hide" class="sheet-hide" type="button" aria-label="パネルを隠して地図を広く表示">隠す ▼</button>
+    </div>
 
     <header class="plate">
       <div class="plate-inner">
@@ -241,6 +274,7 @@
 
     <p class="disclaimer">ルートと警告は公開地図データとAIによる推定です。未登録の制限や工事規制があり得るため、必ず現地の標識を優先してください。</p>
   </aside>
+  <button id="sheet-show" class="sheet-show" type="button" hidden aria-label="操作パネルを表示">▲ メニュー</button>
 
   <!-- 走行中ナビ -->
   <div id="nav-ui" class="nav-ui" hidden>
@@ -441,6 +475,44 @@
   <script src="app.js?v=1.2.1"></script>
   <script src="nav.js?v=1.2.1"></script>
   <script src="track.js?v=1.3.0"></script>
+  <script>
+    /* パネルを隠す／出す（スマホ） */
+    (function () {
+      var sheet = document.getElementById('sheet');
+      var showBtn = document.getElementById('sheet-show');
+      var lastOpen = 'peek';
+      function apply() {
+        var st = sheet.dataset.state;
+        if (st !== 'hide') lastOpen = st === 'min' ? 'peek' : st;
+        showBtn.hidden = st !== 'hide';
+        sheet.setAttribute('aria-hidden', String(st === 'hide' && !window.matchMedia('(min-width: 900px)').matches));
+      }
+      function hideSheet() { sheet.dataset.state = 'hide'; }
+      function openSheet() { sheet.dataset.state = lastOpen || 'peek'; }
+      new MutationObserver(apply).observe(sheet, { attributes: true, attributeFilter: ['data-state'] });
+      apply();
+
+      document.getElementById('sheet-hide').addEventListener('click', function (e) { e.stopPropagation(); hideSheet(); });
+      showBtn.addEventListener('click', openSheet);
+
+      /* 記録中ピルを押したら隠れていても開く */
+      var pill = document.getElementById('rec-pill');
+      if (pill) pill.addEventListener('click', function () { if (sheet.dataset.state === 'hide') sheet.dataset.state = 'peek'; });
+
+      /* 上部を下へスワイプ：全画面→標準→小→隠す、上へスワイプ：逆 */
+      var top = document.getElementById('sheet-top'), y0 = null;
+      var order = ['hide', 'min', 'peek', 'full'];
+      top.addEventListener('touchstart', function (e) { y0 = e.touches[0].clientY; }, { passive: true });
+      top.addEventListener('touchend', function (e) {
+        if (y0 === null) return;
+        var dy = e.changedTouches[0].clientY - y0; y0 = null;
+        if (Math.abs(dy) < 40) return;
+        var i = order.indexOf(sheet.dataset.state); if (i < 0) i = 2;
+        i = dy > 0 ? Math.max(0, i - 1) : Math.min(order.length - 1, i + 1);
+        sheet.dataset.state = order[i];
+      });
+    })();
+  </script>
   <script>
     window.addEventListener('load', function () {
       var want = window.RV_EXPECT, bad = [];
