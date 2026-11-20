@@ -207,6 +207,11 @@
               <option value="shortest">距離優先</option>
             </select>
           </label>
+          <label class="fld-inline">
+            <span>AIモデル</span>
+            <select id="opt-model" class="sel" aria-describedby="opt-model-hint"></select>
+          </label>
+          <p id="opt-model-hint" class="hint model-hint">選んだモデルが使えない時は、汎用の最新モデルに自動で切り替わります</p>
         </div>
 
         <button id="btn-route" class="btn-primary" type="button">ルートを探す</button>
@@ -474,10 +479,10 @@
   </dialog>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-  <script src="config.js?v=1.2.1"></script>
-  <script src="auth.js?v=1.2.1"></script>
-  <script src="app.js?v=1.2.1"></script>
-  <script src="nav.js?v=1.2.1"></script>
+  <script src="config.js?v=1.2.2"></script>
+  <script src="auth.js?v=1.2.2"></script>
+  <script src="app.js?v=1.2.2"></script>
+  <script src="nav.js?v=1.2.2"></script>
   <script src="track.js?v=1.3.0"></script>
   <script>
     /* パネルを隠す／出す（スマホ） */

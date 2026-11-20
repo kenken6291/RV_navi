@@ -415,6 +415,8 @@ a { color: var(--sign-blue); }
 .ai ul { margin: 0; padding-left: 1.2em; }
 .ai li { margin: 4px 0; font-size: .92rem; }
 .ai p { font-size: .94rem; }
+.ai .ai-model { margin-top: 12px; font-size: .78rem; color: var(--muted); }
+.model-hint { margin-top: 0; }
 .note { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--soft); font-size: .86rem; color: var(--muted); }
 .stats { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 12px; font-size: .84rem; color: var(--muted); }
 .stats b { color: var(--ink); }

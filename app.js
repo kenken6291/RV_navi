@@ -7,7 +7,7 @@
 'use strict';
 
 window.RV_FILES = window.RV_FILES || {};
-window.RV_FILES.app = '1.2.1';
+window.RV_FILES.app = '1.2.2';
 
 const CONFIG = {
   // GAS の URL は config.js に書きます
@@ -21,8 +21,22 @@ const CONFIG = {
     poiCats: 'rvnavi_poicats',
     radius: 'rvnavi_radius',
     opts: 'rvnavi_opts',
+    model: 'rvnavi_gemini_model',
   },
 };
+
+/* ---------- Geminiモデルの選択肢（config.js で設定） ---------- */
+const RVC = window.RV_CONFIG || {};
+const GEMINI_MODEL_OPTIONS = Array.isArray(RVC.GEMINI_MODEL_OPTIONS) && RVC.GEMINI_MODEL_OPTIONS.length
+  ? RVC.GEMINI_MODEL_OPTIONS
+  : [{ value: '', label: '自動モード（汎用の最新）' }];
+const DEFAULT_GEMINI_MODEL = RVC.GEMINI_MODEL || '';
+
+function modelLabel(value) {
+  const o = GEMINI_MODEL_OPTIONS.find(x => x.value === value);
+  if (o) return o.label.replace(/（.*?）/g, '');
+  return value ? value.replace(/^gemini-/, '').replace(/-/g, ' ') : '自動';
+}
 
 const POI_CATS = {
   michinoeki:  { label: '道の駅',          glyph: '駅' },
@@ -776,7 +790,7 @@ async function runAnalysis(opts = {}) {
   renderAi();
   renderRouteCards();
   try {
-    const d = await api('analyzeRoute', { route: r, vehicle: state.vehicle, useAI: opts.useAI !== false });
+    const d = await api('analyzeRoute', { route: r, vehicle: state.vehicle, useAI: opts.useAI !== false, model: state.model || '' });
     if (seq !== state.seq) return;
     state.analysisByRoute[sel] = d;
     if (sel === state.sel) {
@@ -950,6 +964,10 @@ function renderAi() {
       html += `<h3>走行のアドバイス</h3><ul>${ai.recommendations.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
     }
     if (ai.nightDrivingNote) html += `<h3>夜間に走る場合</h3><p>${esc(ai.nightDrivingNote)}</p>`;
+    if (ai.model) {
+      html += `<p class="ai-model">AIモデル：${esc(modelLabel(ai.model))}${ai.fallback
+        ? `（選んだ${esc(modelLabel(ai.requestedModel))}が使えなかったため自動で切り替えました）` : ''}</p>`;
+    }
     html += '</section>';
   } else if (a.aiError) {
     html += `<p class="note">AIの所見は取得できませんでした（${esc(a.aiError)}）。地図データから検出した危険箇所は「危険箇所」タブで確認できます。</p>`;
@@ -1533,6 +1551,18 @@ function bindUI() {
   };
   ['opt-tolls', 'opt-highways', 'opt-pref'].forEach(id => $(id).addEventListener('change', saveOpts));
 
+  // AIモデルの選択（端末に保存）
+  const selModel = $('opt-model');
+  selModel.innerHTML = GEMINI_MODEL_OPTIONS.map(o =>
+    `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('');
+  if (!GEMINI_MODEL_OPTIONS.some(o => o.value === state.model)) state.model = DEFAULT_GEMINI_MODEL;
+  selModel.value = state.model;
+  selModel.addEventListener('change', () => {
+    state.model = selModel.value;
+    lsSet(CONFIG.LS.model, state.model);
+    toast(`AIモデルを「${modelLabel(state.model)}」にしました。次のルート検索から使います`);
+  });
+
   $('btn-route').onclick = searchRoute;
 
   $('opt-lowhaz').checked = state.showLow;
@@ -1563,6 +1593,7 @@ function bindUI() {
 function init() {
   state.vehicle = lsGet(CONFIG.LS.vehicle);
   state.favorites = lsGet(CONFIG.LS.favs, []) || [];
+  state.model = lsGet(CONFIG.LS.model, DEFAULT_GEMINI_MODEL) ?? DEFAULT_GEMINI_MODEL;
   state.showLow = !!lsGet(CONFIG.LS.lowHaz, false);
   const cats = lsGet(CONFIG.LS.poiCats);
   if (Array.isArray(cats)) state.poiCats = new Set(cats.filter(c => POI_CATS[c]));

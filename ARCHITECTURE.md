@@ -27,7 +27,7 @@ flowchart LR
   subgraph Ext["外部API"]
     ORS["OpenRouteService<br>driving-hgv / geocode"]
     OVP["Overpass API<br>OSM道路属性・POI"]
-    GEM["Gemini API<br>2.5 Flash → Flash-Lite"]
+    GEM["Gemini API<br>選択モデル → 汎用の最新へ自動切替"]
     GSI["国土地理院<br>住所検索"]
   end
 
@@ -159,7 +159,7 @@ Driveファイル: `RV_navi_Data/{type}_{clientId}.json`
 | ORS driving-hgv | トラック基準の速度のため所要時間はやや長めに出る |
 | Overpass | 公共サーバーは混雑で429/504あり。2エンドポイント＋リトライ。長距離ルートは約16区間まで確認し、未確認範囲を `osmCoverage` で返す |
 | GAS | 1実行6分。解析は5分で打ち切り、部分結果を返す |
-| Gemini | 2.5 Flash失敗時は Flash-Lite に自動切替 |
+| Gemini | 画面で選んだモデル（4 Hydrogen / 4 Neon / 4 Carbon / 4 Argon / 3.8 Flash / 3.5 Flash）が使えない時は gemini-flash-latest → gemini-4-hydrogen → gemini-3.8-flash の順に自動切替 |
 
 ## 9. ファイル構成（予定）
 

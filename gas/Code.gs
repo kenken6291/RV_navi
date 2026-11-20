@@ -1,11 +1,11 @@
 /**
  * ============================================================
- *  RV_navi - バックエンド (Google Apps Script)  Code.gs v1.1.2
+ *  RV_navi - バックエンド (Google Apps Script)  Code.gs v1.2.0
  * ------------------------------------------------------------
  *  役割: GitHub Pages(フロント) からの API 中継
  *   - ルート探索   : OpenRouteService (driving-hgv)
  *   - 道路属性検査 : Overpass API (OSM の maxheight / maxwidth 等)
- *   - AI リスク評価: Gemini API (3.8 Flash → 失敗時 3.5 Flash-Lite)
+ *   - AI リスク評価: Gemini API（画面で選んだモデル → 使えない時は汎用の最新へ自動切替）
  *   - 地点検索     : 国土地理院 住所検索 + ORS ジオコーディング
  *   - データ保存   : Google Drive (JSON)
  *   - 会員認証     : スプレッドシート(members) + CacheService セッション
@@ -23,23 +23,37 @@
  *  （AUTH_PEPPER / MEMBERS_SHEET_ID / DATA_FOLDER_ID は setup() が自動作成）
  *  初回: setup() を実行して権限承認・データフォルダ・会員シート作成
  *  ※コード変更後は「デプロイを管理」→ 編集 → 新バージョン で再デプロイ
+ *
+ *  【Geminiモデルの決定順】
+ *   1. 画面の「AIモデル」で選ばれたモデル（params.model）
+ *   2. スクリプトプロパティ GEMINI_MODEL（任意）
+ *   3. 汎用の最新モデル CONFIG.GEMINI_FALLBACK_MODELS を先頭から順に試す
+ *   ※ モデル名は "gemini-" で始まる英小文字・数字・ハイフン・ドットのみ受け付ける
+ *   ※ 選んだモデルが使えない（廃止・未公開・混雑・エラー）時は 3 へ自動で切り替える
  * ============================================================
  */
 
 const CONFIG = {
   APP_NAME: 'RV_navi',
   SITE_URL: 'https://kenken6291.github.io/RV_navi/',
-  VERSION: '1.1.2',
+  VERSION: '1.2.0',
   TZ: 'Asia/Tokyo',
 
   DATA_FOLDER_NAME: 'RV_navi_Data',
   DATA_TYPES: ['profile', 'favorites', 'customPoi'],
   MAX_DATA_BYTES: 500 * 1024,
 
-  // 2.5系は新規プロジェクトでは利用制限があるため、Google推奨の最新モデルを使用
-  GEMINI_MODEL: 'gemini-3.8-flash',
-  GEMINI_MODEL_FALLBACK: 'gemini-3.5-flash-lite',
-  GEMINI_THINKING_LEVEL: 'low', // 3.8 Flash は low / medium / high（GASの時間制限対策で low）
+  // 指定なし・該当なしの時に使う汎用最新モデル（先頭から順に試す）
+  //   gemini-flash-latest : Googleが常に最新の汎用モデルへ自動で差し替えるエイリアス
+  //   gemini-4-hydrogen   : 2026年11月時点の汎用最新モデル（日々の暮らしをサポート）
+  //   gemini-3.8-flash    : 最終的な保険
+  GEMINI_FALLBACK_MODELS: ['gemini-flash-latest', 'gemini-4-hydrogen', 'gemini-3.8-flash'],
+  GEMINI_MODEL_PATTERN: /^gemini-[a-z0-9][a-z0-9.\-]{0,60}$/,
+  // Gemini 3/4 系は思考レベルを指定できる。GASの6分制限対策で low
+  // （思考レベル非対応のモデルは自動で指定なしに切り替えて再試行）
+  GEMINI_THINKING_LEVEL: 'low',
+  GEMINI_RETRY_CODES: [429, 500, 503],
+  GEMINI_MAX_ATTEMPTS: 2,
   GEMINI_RATE_PER_HOUR: 30,
 
   // 旧 api.openrouteservice.org は廃止予定のため HeiGIT の新ホストを使用
@@ -821,7 +835,7 @@ function analyzeRoute_(p, memberId) {
   let ai = null, aiError = null;
   if (p.useAI !== false && hazards.length + stats.mainRoads.length > 0) {
     try {
-      ai = geminiAssess_(v, stats, hazards, memberId);
+      ai = geminiAssess_(v, stats, hazards, memberId, p.model);
     } catch (e) {
       aiError = e.message;
       console.warn('Gemini', e);
@@ -844,6 +858,9 @@ function analyzeRoute_(p, memberId) {
       additionalConcerns: ai.additionalConcerns || [],
       recommendations: ai.recommendations || [],
       nightDrivingNote: ai.nightDrivingNote || '',
+      model: ai.usedModel || '',
+      requestedModel: ai.requestedModel || '',
+      fallback: !!(ai.usedModel && ai.requestedModel && ai.usedModel !== ai.requestedModel),
     } : null,
     aiError,
     osmCoverage: { checkedKm: osm.checkedKm, totalKm: osm.totalKm, notes: osm.errors },
@@ -1213,7 +1230,8 @@ function routeStats_(rt, coords, cum) {
 /* ------------------------------------------------------------
  *  ④ Gemini によるリスク評価
  * ---------------------------------------------------------- */
-function geminiAssess_(v, stats, hazards, memberId) {
+function geminiAssess_(v, stats, hazards, memberId, requestedModel) {
+  const model = resolveGeminiModel_(requestedModel);
   const payload = {
     vehicle: {
       widthM: v.width, heightM: v.height, lengthM: v.totalLength, weightT: v.totalWeight,
@@ -1226,7 +1244,7 @@ function geminiAssess_(v, stats, hazards, memberId) {
     })),
   };
 
-  const ck = 'gem:' + sha_(JSON.stringify(payload));
+  const ck = 'gem:' + sha_(model + '|' + JSON.stringify(payload));
   const hit = cacheGet_(ck);
   if (hit) return hit;
 
@@ -1291,13 +1309,20 @@ function geminiAssess_(v, stats, hazards, memberId) {
     required: ['overallRisk', 'riskScore', 'summary', 'hazards', 'recommendations'],
   };
 
-  let res;
-  try {
-    res = callGemini_(CONFIG.GEMINI_MODEL, prompt, schema, CONFIG.GEMINI_THINKING_LEVEL);
-  } catch (e) {
-    console.warn('Gemini主モデル失敗→フォールバック', e);
-    res = callGemini_(CONFIG.GEMINI_MODEL_FALLBACK, prompt, schema, null);
+  // 選んだモデル → 汎用の最新モデル（順番に）で、使えるものが見つかるまで試す
+  const candidates = [model].concat(CONFIG.GEMINI_FALLBACK_MODELS.filter(m => m !== model));
+  let res = null, usedModel = model, lastErr = null;
+  for (let i = 0; i < candidates.length; i++) {
+    usedModel = candidates[i];
+    try {
+      res = callGemini_(usedModel, prompt, schema, CONFIG.GEMINI_THINKING_LEVEL);
+      break;
+    } catch (e) {
+      lastErr = e;
+      console.warn('Geminiモデル「' + usedModel + '」が使えないため次の候補に切り替えます: ' + e.message);
+    }
   }
+  if (!res) throw lastErr || new Error('Geminiの応答が得られませんでした');
 
   // 出力の正規化
   res.overallRisk = ['low', 'medium', 'high', 'very_high'].indexOf(res.overallRisk) >= 0 ? res.overallRisk : 'medium';
@@ -1307,37 +1332,66 @@ function geminiAssess_(v, stats, hazards, memberId) {
   res.additionalConcerns = (Array.isArray(res.additionalConcerns) ? res.additionalConcerns : []).slice(0, 8);
   res.recommendations = (Array.isArray(res.recommendations) ? res.recommendations : []).slice(0, 8).map(s => String(s).slice(0, 200));
   res.nightDrivingNote = String(res.nightDrivingNote || '').slice(0, 300);
+  res.usedModel = usedModel;
+  res.requestedModel = model;
 
   cachePut_(ck, res, 21600);
   return res;
 }
 
+/**
+ * 使用するGeminiモデル名を決定する。
+ * 画面の指定 → スクリプトプロパティ GEMINI_MODEL → 汎用の最新 の順。不正な名前は無視する。
+ */
+function resolveGeminiModel_(requested) {
+  const req = String(requested || '').trim().toLowerCase();
+  if (req && CONFIG.GEMINI_MODEL_PATTERN.test(req)) return req;
+  const prop = String(prop_('GEMINI_MODEL', false) || '').trim().toLowerCase();
+  if (prop && CONFIG.GEMINI_MODEL_PATTERN.test(prop)) return prop;
+  return CONFIG.GEMINI_FALLBACK_MODELS[0];
+}
+
+/**
+ * Gemini API を1モデルに対して呼び出す。
+ * 混雑(429/500/503)時は少し待って再試行。思考レベル非対応のモデルは指定なしで再試行。
+ */
 function callGemini_(model, prompt, schema, thinkingLevel) {
   const key = prop_('GEMINI_API_KEY', true);
-  // Gemini 3 系は温度を既定値のまま使うことが推奨されているため指定しない
-  const generationConfig = {
-    maxOutputTokens: 8192,
-    responseMimeType: 'application/json',
-    responseSchema: schema,
+  // Gemini 3/4 系は温度を既定値のまま使うことが推奨されているため指定しない
+  const buildBody = (lv) => {
+    const generationConfig = {
+      maxOutputTokens: 8192,
+      responseMimeType: 'application/json',
+      responseSchema: schema,
+    };
+    if (lv) generationConfig.thinkingConfig = { thinkingLevel: lv };
+    return { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig };
   };
-  if (thinkingLevel) generationConfig.thinkingConfig = { thinkingLevel };
-  const body = {
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig,
-  };
-  const r = fetchJson_('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
+  const send = (lv) => fetchJson_(url, {
     method: 'post',
     contentType: 'application/json',
     headers: { 'x-goog-api-key': key },
-    payload: JSON.stringify(body),
+    payload: JSON.stringify(buildBody(lv)),
   });
+
+  let lv = thinkingLevel || null;
+  let r = null;
+  for (let attempt = 1; attempt <= CONFIG.GEMINI_MAX_ATTEMPTS + 1; attempt++) {
+    r = send(lv);
+    if (r.code === 200) break;
+    const msg = (r.body && r.body.error && r.body.error.message) || String(r.text || '');
+    if (r.code === 400 && lv && /thinking/i.test(msg)) { lv = null; continue; } // 思考レベル非対応
+    if (CONFIG.GEMINI_RETRY_CODES.indexOf(r.code) < 0 || attempt >= CONFIG.GEMINI_MAX_ATTEMPTS) break;
+    Utilities.sleep(1500 * attempt);
+  }
   if (r.code !== 200) {
     const msg = r.body && r.body.error ? r.body.error.message : String(r.text || '').slice(0, 200);
     throw new Error('Gemini(' + model + ') HTTP ' + r.code + ': ' + msg);
   }
   const cand = r.body && r.body.candidates && r.body.candidates[0];
   const text = cand && cand.content && cand.content.parts
-    ? cand.content.parts.map(pt => pt.text || '').join('') : '';
+    ? cand.content.parts.filter(pt => !pt.thought).map(pt => pt.text || '').join('') : '';
   if (!text) throw new Error('Gemini応答が空です（' + ((cand && cand.finishReason) || 'unknown') + '）');
   return JSON.parse(text.replace(/^\s*```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim());
 }
@@ -2081,12 +2135,14 @@ function test_expand() {
   Logger.log(JSON.stringify(expandMapUrl_({ url: 'https://maps.app.goo.gl/xxxxxxxx' })));
 }
 
-/** Gemini の接続確認（主モデルと予備モデル） */
+/** Gemini の接続確認（画面の選択肢と同じモデルを順に確認） */
 function test_gemini() {
   const schema = { type: 'OBJECT', properties: { reply: { type: 'STRING' } }, required: ['reply'] };
-  [[CONFIG.GEMINI_MODEL, CONFIG.GEMINI_THINKING_LEVEL], [CONFIG.GEMINI_MODEL_FALLBACK, null]].forEach(([m, lv]) => {
+  const models = ['gemini-flash-latest', 'gemini-4-hydrogen', 'gemini-4-neon', 'gemini-4-carbon',
+    'gemini-4-argon', 'gemini-3.8-flash', 'gemini-3.5-flash'];
+  models.forEach(m => {
     try {
-      const r = callGemini_(m, '「接続OK」と日本語で返してください。', schema, lv);
+      const r = callGemini_(m, '「接続OK」と日本語で返してください。', schema, CONFIG.GEMINI_THINKING_LEVEL);
       Logger.log(m + ' : ' + JSON.stringify(r));
     } catch (e) {
       Logger.log(m + ' : 失敗 ' + e.message);
